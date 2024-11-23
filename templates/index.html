@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConvertKit Data Analysis</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <style>
+        #dataForm {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">ConvertKit Data Analysis</h1>
+        
+        <!-- API Key Form -->
+        <div id="apiKeyForm">
+            <div class="form-group">
+                <label for="api_key">ConvertKit API Key</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="api_key" name="api_key" 
+                           placeholder="Enter your ConvertKit API key" required>
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-secondary" type="button" 
+                                onclick="toggleApiKeyVisibility()">Show/Hide</button>
+                    </div>
+                </div>
+                <small class="form-text text-muted">Your API key will not be stored and is only used for this session.</small>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="validateApiKey()">Validate API Key</button>
+        </div>
+
+        <!-- Main Data Form (initially hidden) -->
+        <form id="dataForm" method="POST">
+            <input type="hidden" id="validated_api_key" name="api_key">
+            <input type="hidden" id="account_name" name="account_name">
+            
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="date" class="form-control" id="start_date" name="start_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="date" class="form-control" id="end_date" name="end_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="paperboy_start_date">Paperboy Start Date</label>
+                <input type="date" class="form-control" id="paperboy_start_date" 
+                       name="paperboy_start_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="tags">Select Tags</label>
+                <select multiple class="form-control" id="tags" name="tags">
+                    {% if tags %}
+                        {% for tag in tags %}
+                            <option value="{{ tag }}">{{ tag }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="custom_fields">Select Custom Fields</label>
+                <select multiple class="form-control" id="custom_fields" name="custom_fields">
+                    {% if custom_fields %}
+                        {% for field in custom_fields %}
+                            <option value="{{ field }}">{{ field }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </form>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.0.7/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    
+    <script>
+        function toggleApiKeyVisibility() {
+            const apiKeyInput = document.getElementById('api_key');
+            apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+        }
+
+        function validateApiKey() {
+            const apiKey = document.getElementById('api_key').value;
+            
+            if (!apiKey) {
+                alert('Please enter an API key');
+                return;
+            }
+            
+            // Show loading state
+            const validateButton = document.querySelector('button[onclick="validateApiKey()"]');
+            validateButton.disabled = true;
+            validateButton.textContent = 'Validating...';
+            
+            fetch('/validate_api_key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ api_key: apiKey })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.valid) {
+                    // Store account name in hidden input
+                    document.getElementById('account_name').value = data.account_name;
+                    // Show the main form and populate fields
+                    document.getElementById('apiKeyForm').style.display = 'none';
+                    document.getElementById('dataForm').style.display = 'block';
+                    document.getElementById('validated_api_key').value = apiKey;
+                    
+                    // Populate tags and custom fields
+                    populateSelect('tags', data.tags);
+                    populateSelect('custom_fields', data.custom_fields);
+                } else {
+                    alert('Invalid API key: ' + (data.error || 'Please try again'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error validating API key. Please try again.');
+            })
+            .finally(() => {
+                // Reset button state
+                validateButton.disabled = false;
+                validateButton.textContent = 'Validate API Key';
+            });
+        }
+
+        function populateSelect(elementId, options) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = '';
+            options.forEach(option => {
+                const opt = document.createElement('option');
+                opt.value = option;
+                opt.textContent = option;
+                select.appendChild(opt);
+            });
+        }
+    </script>
+</body>
+</html>
