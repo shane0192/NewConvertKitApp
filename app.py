@@ -774,25 +774,49 @@ def get_total_subscribers_at_date(api_key, date_str):
         "Authorization": f"Bearer {api_key}"
     }
     
+    total_subscribers = 0
+    next_page = True
+    cursor = None
+    
     try:
-        response = requests.get(
-            f"{BASE_URL}subscribers",
-            headers=headers,
-            params={'from': date_str, 'to': date_str}
-        )
-        print(f"Subscriber API Response Status: {response.status_code}")
-        print(f"Subscriber API Response: {response.text}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            return len(data.get('subscribers', []))
-        else:
-            print(f"Error response: {response.text}")
-            return None
+        while next_page:
+            params = {
+                'from': date_str,
+                'to': date_str,
+                'per_page': 500
+            }
             
+            if cursor:
+                params['after'] = cursor
+                
+            response = requests.get(
+                f"{BASE_URL}subscribers",
+                headers=headers,
+                params=params
+            )
+            print(f"Subscriber API Response Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                subscribers = data.get('subscribers', [])
+                total_subscribers += len(subscribers)
+                
+                # Check pagination
+                pagination = data.get('pagination', {})
+                next_page = pagination.get('has_next_page', False)
+                if next_page:
+                    cursor = pagination.get('end_cursor')
+                print(f"Current count: {total_subscribers}, Has next page: {next_page}")
+            else:
+                print(f"Error response: {response.text}")
+                return None
+                
     except Exception as e:
         print(f"Error fetching subscribers: {str(e)}")
         return None
+        
+    print(f"Total subscribers found: {total_subscribers}")
+    return total_subscribers
 
 def get_subscriber_headers(api_key):
     """Headers for subscriber-related endpoints (counts, subscriber data)"""
