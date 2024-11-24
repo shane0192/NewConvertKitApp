@@ -24,7 +24,7 @@ PER_PAGE_PARAM = 5000
 PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"  # Your start date with Paperboy
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Required for sessions
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # ConvertKit OAuth settings
 CLIENT_ID = os.getenv('CONVERTKIT_CLIENT_ID')
@@ -213,53 +213,61 @@ def index():
     authenticated = 'oauth_token' in session
     
     if request.method == 'POST' and authenticated:
-        # Get form data
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        paperboy_start_date = request.form.get('paperboy_start')
-        api_key = session['oauth_token']['access_token']
-        
-        # Get data for the selected date range
-        total_recent_subscribers = get_subscribers_by_date_range(api_key, start_date, end_date)
-        
-        # Get tag counts
-        tag_counts = {
-            'Facebook Ads': get_subscribers_by_tag_with_dates('Facebook Ads', api_key, start_date, end_date),
-            'Creator Network': get_subscribers_by_tag_with_dates('Creator Network', api_key, start_date, end_date)
-        }
-        
-        # Calculate organic subscribers
-        attributed_subscribers = sum(tag_counts.values())
-        organic_subscribers = total_recent_subscribers - attributed_subscribers
-        
-        # Get Paperboy stats
-        paperboy_total_subscribers = get_subscribers_by_date_range(api_key, paperboy_start_date, end_date)
-        paperboy_fb_ads = get_subscribers_by_tag_with_dates('Facebook Ads', api_key, paperboy_start_date, end_date)
-        paperboy_sparkloop = get_subscribers_by_custom_field_and_date('rh_isref', 'YES', api_key, paperboy_start_date, end_date)
-        paperboy_attributed = paperboy_fb_ads + paperboy_sparkloop
-        
-        # Get growth metrics
-        subscribers_at_start = get_total_subscribers_at_date(api_key, paperboy_start_date)
-        current_subscribers = get_total_subscribers_at_date(api_key, end_date)
-        total_growth = current_subscribers - subscribers_at_start
-        growth_percentage = round((total_growth / subscribers_at_start * 100), 1) if subscribers_at_start > 0 else 0
-        
-        return render_template('results.html',
-            start_date=start_date,
-            end_date=end_date,
-            total_recent_subscribers=total_recent_subscribers,
-            tag_counts=tag_counts,
-            organic_subscribers=organic_subscribers,
-            paperboy_start_date=paperboy_start_date,
-            paperboy_total_subscribers=paperboy_total_subscribers,
-            paperboy_attributed=paperboy_attributed,
-            paperboy_fb_ads=paperboy_fb_ads,
-            paperboy_sparkloop=paperboy_sparkloop,
-            subscribers_at_start=subscribers_at_start,
-            current_subscribers=current_subscribers,
-            total_growth=total_growth,
-            growth_percentage=growth_percentage
-        )
+        try:
+            # Get form data
+            start_date = request.form.get('start_date')
+            end_date = request.form.get('end_date')
+            paperboy_start_date = request.form.get('paperboy_start')
+            api_key = session['oauth_token']['access_token']
+            
+            # Print debug info
+            print(f"Processing form with dates: {start_date} to {end_date}")
+            print(f"Using API key: {api_key[:10]}...")
+
+            # Get data for the selected date range
+            total_recent_subscribers = get_subscribers_by_date_range(api_key, start_date, end_date)
+            
+            # Get tag counts
+            tag_counts = {
+                'Facebook Ads': get_subscribers_by_tag_with_dates('Facebook Ads', api_key, start_date, end_date),
+                'Creator Network': get_subscribers_by_tag_with_dates('Creator Network', api_key, start_date, end_date)
+            }
+            
+            # Calculate organic subscribers
+            attributed_subscribers = sum(tag_counts.values())
+            organic_subscribers = total_recent_subscribers - attributed_subscribers
+            
+            # Get Paperboy stats
+            paperboy_total_subscribers = get_subscribers_by_date_range(api_key, paperboy_start_date, end_date)
+            paperboy_fb_ads = get_subscribers_by_tag_with_dates('Facebook Ads', api_key, paperboy_start_date, end_date)
+            paperboy_sparkloop = get_subscribers_by_custom_field_and_date('rh_isref', 'YES', api_key, paperboy_start_date, end_date)
+            paperboy_attributed = paperboy_fb_ads + paperboy_sparkloop
+            
+            # Get growth metrics
+            subscribers_at_start = get_total_subscribers_at_date(api_key, paperboy_start_date)
+            current_subscribers = get_total_subscribers_at_date(api_key, end_date)
+            total_growth = current_subscribers - subscribers_at_start
+            growth_percentage = round((total_growth / subscribers_at_start * 100), 1) if subscribers_at_start > 0 else 0
+            
+            return render_template('results.html',
+                start_date=start_date,
+                end_date=end_date,
+                total_recent_subscribers=total_recent_subscribers,
+                tag_counts=tag_counts,
+                organic_subscribers=organic_subscribers,
+                paperboy_start_date=paperboy_start_date,
+                paperboy_total_subscribers=paperboy_total_subscribers,
+                paperboy_attributed=paperboy_attributed,
+                paperboy_fb_ads=paperboy_fb_ads,
+                paperboy_sparkloop=paperboy_sparkloop,
+                subscribers_at_start=subscribers_at_start,
+                current_subscribers=current_subscribers,
+                total_growth=total_growth,
+                growth_percentage=growth_percentage
+            )
+        except Exception as e:
+            print(f"Error processing form: {str(e)}")
+            return render_template('index.html', authenticated=authenticated, error=str(e))
     
     return render_template('index.html', authenticated=authenticated)
 
@@ -813,7 +821,10 @@ def oauth_authorize():
     print("Starting OAuth authorization")
     convertkit = OAuth2Session(CLIENT_ID, redirect_uri=REDIRECT_URI)
     authorization_url, state = convertkit.authorization_url(AUTHORIZATION_BASE_URL)
+    
+    # Store the state in the session
     session['oauth_state'] = state
+    
     return redirect(authorization_url)
 
 @app.route('/oauth/callback')
