@@ -23,6 +23,7 @@ load_dotenv()  # Load environment variables
 BASE_URL = "https://api.convertkit.com/v4/"
 PER_PAGE_PARAM = 5000
 PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"  # Your start date with Paperboy
+REDIRECT_URI = 'https://convertkit-analytics-941b0603483f.herokuapp.com/oauth/callback'
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
@@ -818,10 +819,14 @@ def oauth_authorize():
 def exchange_code_for_token(code):
     """Exchange OAuth code for access token"""
     token_url = 'https://api.convertkit.com/oauth/token'
-    client_id = os.environ.get('CONVERTKIT_CLIENT_ID')
-    client_secret = os.environ.get('CONVERTKIT_CLIENT_SECRET')
-    redirect_uri = os.environ.get('OAUTH_REDIRECT_URI')
-
+    client_id = CLIENT_ID  # Use the constant instead of env var
+    client_secret = CLIENT_SECRET  # Use the constant instead of env var
+    redirect_uri = REDIRECT_URI  # Use the constant instead of env var
+    
+    # Debug prints
+    print(f"Using client_id: {client_id}")
+    print(f"Using redirect_uri: {redirect_uri}")
+    
     token_data = {
         'client_id': client_id,
         'client_secret': client_secret,
@@ -829,7 +834,9 @@ def exchange_code_for_token(code):
         'grant_type': 'authorization_code',
         'redirect_uri': redirect_uri
     }
-
+    
+    print(f"Sending token request with data: {token_data}")
+    
     response = requests.post(token_url, json=token_data)
     if response.status_code != 200:
         print(f"Error getting token: {response.text}")
