@@ -219,7 +219,7 @@ def index():
             api_key = session['oauth_token']['access_token']
             print(f"Using OAuth token: {api_key[:10]}...")
             
-            # Fetch tags
+            # Fetch tags for display
             headers = {
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}"
@@ -227,17 +227,47 @@ def index():
             
             tags_response = requests.get(f"{BASE_URL}tags", headers=headers)
             print(f"Tags API Response Status: {tags_response.status_code}")
-            print(f"Tags API Response: {tags_response.text}")
             
             if tags_response.status_code == 200:
                 tags_data = tags_response.json()
                 tags = tags_data.get('tags', [])
                 print(f"Found {len(tags)} tags")
-            else:
-                print(f"Failed to get tags: {tags_response.text}")
+            
+            # Handle form submission
+            if request.method == 'POST':
+                print("Processing POST request")
+                start_date = request.form.get('start_date')
+                end_date = request.form.get('end_date')
+                selected_tags = request.form.getlist('tags')  # Get multiple selected tags
+                print(f"Form data - Start: {start_date}, End: {end_date}, Tags: {selected_tags}")
+                
+                try:
+                    # Make API calls for subscriber counts
+                    start_count = get_total_subscribers_at_date(api_key, start_date)
+                    print(f"Start date count: {start_count}")
+                    end_count = get_total_subscribers_at_date(api_key, end_date)
+                    print(f"End date count: {end_count}")
+                    
+                    growth = end_count - start_count if end_count and start_count else None
+                    print(f"Calculated growth: {growth}")
+                    
+                    return render_template('index.html', 
+                                        authenticated=authenticated,
+                                        tags=tags,
+                                        start_count=start_count,
+                                        end_count=end_count,
+                                        growth=growth)
+                except Exception as e:
+                    print(f"Error processing subscriber counts: {str(e)}")
+                    print(f"Full error details: {repr(e)}")
+                    return render_template('index.html', 
+                                        authenticated=authenticated,
+                                        tags=tags,
+                                        error=str(e))
                 
         except Exception as e:
-            print(f"Error fetching tags: {str(e)}")
+            print(f"Error in main handler: {str(e)}")
+            print(f"Full error details: {repr(e)}")
             return render_template('index.html', authenticated=authenticated, error=str(e))
     
     return render_template('index.html', authenticated=authenticated, tags=tags)
@@ -735,30 +765,33 @@ def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, s
     print(f"Total subscribers with {field_name}={field_value}: {total_subscribers}")
     return total_subscribers
 
-def get_total_subscribers_at_date(api_key, date):
-    print(f"\nFetching total subscribers at date: {date}")
-    print(f"Using API key: {api_key[:10]}...")  # Debug info
+def get_total_subscribers_at_date(api_key, date_str):
+    """Get total subscribers at a specific date"""
+    print(f"\nFetching total subscribers at date: {date_str}")
     
-    params = {
-        'page_size': 500,
-        'created_before': date,
-        'status': 'active'
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}"
     }
     
-    response = requests.get(
-        f"{BASE_URL}/subscribers",
-        headers=get_api_headers(api_key),
-        params=params
-    )
-    
-    print(f"Response status: {response.status_code}")  # Debug info
-    if response.status_code == 200:
-        data = response.json()
-        total = data.get('total_subscribers', 0)
-        print(f"Total subscribers: {total}")
-        return total
-    else:
-        print(f"Error response: {response.text}")
+    try:
+        response = requests.get(
+            f"{BASE_URL}subscribers",
+            headers=headers,
+            params={'from': date_str, 'to': date_str}
+        )
+        print(f"Subscriber API Response Status: {response.status_code}")
+        print(f"Subscriber API Response: {response.text}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            return len(data.get('subscribers', []))
+        else:
+            print(f"Error response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Error fetching subscribers: {str(e)}")
         return None
 
 def get_subscriber_headers(api_key):
