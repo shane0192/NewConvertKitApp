@@ -212,11 +212,17 @@ print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # Your POST handling code
+        if 'api_key' not in session:
+            print("No API key in session")
+            return redirect(url_for('oauth_authorize'))
+            
+        # Your existing POST handling code
         start_date = request.form['start_date']
         end_date = request.form['end_date']
         
-        # Start the background tasks
+        # Debug print
+        print(f"Processing request with API key: {session.get('api_key')}")
+        
         task1 = count_subscribers.delay(session['api_key'], start_date)
         task2 = count_subscribers.delay(session['api_key'], end_date)
         
@@ -811,16 +817,24 @@ def oauth_authorize():
 
 @app.route('/oauth/callback')
 def oauth_callback():
-    """Step 2: Retrieving an access token"""
     print("Received OAuth callback")
-    convertkit = OAuth2Session(CLIENT_ID, state=session['oauth_state'], redirect_uri=REDIRECT_URI)
-    token = convertkit.fetch_token(
-        TOKEN_URL,
-        client_secret=CLIENT_SECRET,
-        authorization_response=request.url
-    )
-    print(f"OAuth token received: {token}")  # Debug print
-    session['oauth_token'] = token
+    
+    # Get the authorization code
+    code = request.args.get('code')
+    state = request.args.get('state')
+    
+    # Exchange the code for an access token
+    token_response = exchange_code_for_token(code)
+    print(f"OAuth token received: {token_response}")
+    
+    # Store the access token in the session
+    session['access_token'] = token_response['access_token']
+    session['api_key'] = token_response['access_token']  # Make sure this line is here
+    session.permanent = True  # Make the session persistent
+    
+    # Debug print to verify session
+    print(f"Session after storing token: {session}")
+    
     return redirect(url_for('index'))
 
 def print_all_routes():
