@@ -807,7 +807,8 @@ def get_api_headers(api_key):
     """Get appropriate headers based on API key format"""
     base_headers = {"Accept": "application/json"}
     
-    if api_key.startswith('kit_'):
+    # If it's an OAuth token (longer than a typical API key)
+    if len(api_key) > 50:  # OAuth tokens are typically longer
         base_headers["Authorization"] = f"Bearer {api_key}"
     else:
         base_headers["X-Kit-Api-Key"] = api_key
