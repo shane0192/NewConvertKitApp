@@ -815,6 +815,30 @@ def oauth_authorize():
     
     return redirect(authorization_url)
 
+def exchange_code_for_token(code):
+    """Exchange OAuth code for access token"""
+    token_url = 'https://api.convertkit.com/oauth/token'
+    client_id = os.environ.get('CONVERTKIT_CLIENT_ID')
+    client_secret = os.environ.get('CONVERTKIT_CLIENT_SECRET')
+    redirect_uri = os.environ.get('OAUTH_REDIRECT_URI')
+
+    token_data = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'grant_type': 'authorization_code',
+        'redirect_uri': redirect_uri
+    }
+
+    response = requests.post(token_url, json=token_data)
+    if response.status_code != 200:
+        print(f"Error getting token: {response.text}")
+        raise Exception("Failed to get access token")
+        
+    token_json = response.json()
+    token_json['expires_at'] = time.time() + token_json['expires_in']
+    return token_json
+
 @app.route('/oauth/callback')
 def oauth_callback():
     print("Received OAuth callback")
@@ -823,19 +847,22 @@ def oauth_callback():
     code = request.args.get('code')
     state = request.args.get('state')
     
-    # Exchange the code for an access token
-    token_response = exchange_code_for_token(code)
-    print(f"OAuth token received: {token_response}")
-    
-    # Store the access token in the session
-    session['access_token'] = token_response['access_token']
-    session['api_key'] = token_response['access_token']  # Make sure this line is here
-    session.permanent = True  # Make the session persistent
-    
-    # Debug print to verify session
-    print(f"Session after storing token: {session}")
-    
-    return redirect(url_for('index'))
+    try:
+        # Exchange the code for an access token
+        token_response = exchange_code_for_token(code)
+        print(f"OAuth token received: {token_response}")
+        
+        # Store the access token in the session
+        session['access_token'] = token_response['access_token']
+        session['api_key'] = token_response['access_token']
+        session.permanent = True
+        
+        print(f"Session after storing token: {session}")
+        
+        return redirect(url_for('index'))
+    except Exception as e:
+        print(f"Error in OAuth callback: {str(e)}")
+        return redirect(url_for('index'))
 
 def print_all_routes():
     print("\n=== All Route Definitions ===")
