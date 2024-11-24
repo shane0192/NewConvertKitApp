@@ -7,6 +7,7 @@ from requests_oauthlib import OAuth2Session
 import os
 from dotenv import load_dotenv
 import inspect
+from tasks import count_subscribers
 
 print("=== Starting Flask App Setup ===")
 registered_routes = set()
@@ -766,7 +767,7 @@ def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, s
     return total_subscribers
 
 def get_total_subscribers_at_date(api_key, date_str):
-    """Get total subscribers at a specific date"""
+    """Get total subscribers at a specific date using concurrent requests"""
     print(f"\nFetching total subscribers at date: {date_str}")
     
     headers = {
@@ -774,48 +775,52 @@ def get_total_subscribers_at_date(api_key, date_str):
         "Authorization": f"Bearer {api_key}"
     }
     
-    total_subscribers = 0
-    next_page = True
-    cursor = None
-    
     try:
-        while next_page:
-            params = {
-                'from': date_str,
-                'to': date_str,
-                'per_page': 500
-            }
+        # First, get the initial page to determine total pages
+        params = {
+            'from': date_str,
+            'to': date_str,
+            'per_page': 1000  # Increase page size
+        }
+        
+        response = requests.get(
+            f"{BASE_URL}subscribers",
+            headers=headers,
+            params=params
+        )
+        
+        if response.status_code != 200:
+            print(f"Error response: {response.text}")
+            return None
             
-            if cursor:
-                params['after'] = cursor
-                
-            response = requests.get(
-                f"{BASE_URL}subscribers",
-                headers=headers,
-                params=params
-            )
-            print(f"Subscriber API Response Status: {response.status_code}")
+        data = response.json()
+        total_subscribers = len(data.get('subscribers', []))
+        
+        # Get pagination info
+        pagination = data.get('pagination', {})
+        has_next = pagination.get('has_next_page', False)
+        
+        if not has_next:
+            return total_subscribers
             
-            if response.status_code == 200:
-                data = response.json()
-                subscribers = data.get('subscribers', [])
-                total_subscribers += len(subscribers)
-                
-                # Check pagination
-                pagination = data.get('pagination', {})
-                next_page = pagination.get('has_next_page', False)
-                if next_page:
-                    cursor = pagination.get('end_cursor')
-                print(f"Current count: {total_subscribers}, Has next page: {next_page}")
-            else:
-                print(f"Error response: {response.text}")
-                return None
-                
+        # If there are more pages, make one more request with a larger page size
+        params['per_page'] = 5000  # Maximum page size
+        response = requests.get(
+            f"{BASE_URL}subscribers",
+            headers=headers,
+            params=params
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            total_subscribers = len(data.get('subscribers', []))
+            print(f"Total subscribers found: {total_subscribers}")
+            return total_subscribers
+            
     except Exception as e:
         print(f"Error fetching subscribers: {str(e)}")
         return None
         
-    print(f"Total subscribers found: {total_subscribers}")
     return total_subscribers
 
 def get_subscriber_headers(api_key):
@@ -888,3 +893,58 @@ if __name__ == '__main__':
 def logout():
     session.clear()
     return redirect(url_for('index'))
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        api_key = session['oauth_token']['access_token']
+        
+        # Start background tasks
+        task1 = count_subscribers.delay(api_key, start_date)
+        task2 = count_subscribers.delay(api_key, end_date)
+        
+        # Store task IDs in session
+        session['counting_tasks'] = {
+            'start_date': task1.id,
+            'end_date': task2.id,
+            'dates': {
+                'start': start_date,
+                'end': end_date
+            }
+        }
+        
+        return render_template('counting.html')
+        
+@app.route('/check_progress')
+def check_progress():
+    """Check the progress of counting tasks"""
+    if 'counting_tasks' not in session:
+        return jsonify({'error': 'No counting in progress'})
+        
+    tasks = session['counting_tasks']
+    task1 = count_subscribers.AsyncResult(tasks['start_date'])
+    task2 = count_subscribers.AsyncResult(tasks['end_date'])
+    
+    complete = task1.ready() and task2.ready()
+    
+    if complete:
+        start_count = task1.get()
+        end_count = task2.get()
+        growth = end_count - start_count
+        
+        return jsonify({
+            'complete': True,
+            'start_count': start_count,
+            'end_count': end_count,
+            'growth': growth
+        })
+    
+    return jsonify({
+        'complete': False,
+        'status': {
+            'start_date': task1.status,
+            'end_date': task2.status
+        }
+    })

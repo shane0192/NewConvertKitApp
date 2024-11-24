@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Counting Subscribers</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Counting All Subscribers...</h1>
+    <div class="loader"></div>
+    <div id="progress">
+        <p>Status: <span id="status">Counting in progress...</span></p>
+    </div>
+    
+    <script>
+        function checkProgress() {
+            $.get('/check_progress', function(data) {
+                if (data.complete) {
+                    $('#status').html(
+                        `Complete!<br>
+                        Start Date Count: ${data.start_count}<br>
+                        End Date Count: ${data.end_count}<br>
+                        Growth: ${data.growth}`
+                    );
+                    $('.loader').hide();
+                } else {
+                    setTimeout(checkProgress, 1000);
+                }
+            });
+        }
+        
+        $(document).ready(function() {
+            checkProgress();
+        });
+    </script>
+</body>
+</html> 
