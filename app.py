@@ -27,11 +27,11 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Required for sessions
 
 # ConvertKit OAuth settings
-CLIENT_ID = 'your_client_id'  # Get this from ConvertKit
-CLIENT_SECRET = 'your_client_secret'  # Get this from ConvertKit
+CLIENT_ID = os.getenv('CONVERTKIT_CLIENT_ID')
+CLIENT_SECRET = os.getenv('CONVERTKIT_CLIENT_SECRET')
 AUTHORIZATION_BASE_URL = 'https://app.convertkit.com/oauth/authorize'
 TOKEN_URL = 'https://api.convertkit.com/oauth/token'
-REDIRECT_URI = 'https://484c-72-134-227-142.ngrok-free.app/oauth/callback'
+REDIRECT_URI = 'https://convertkit-analytics-941b0603483f.herokuapp.com/oauth/callback'
 
 # Required for local development with HTTPS
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
