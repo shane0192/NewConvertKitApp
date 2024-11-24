@@ -212,30 +212,35 @@ print("\n=== Registering first index route ===")
 def index():
     authenticated = 'oauth_token' in session
     print(f"Session authenticated: {authenticated}")
+    tags = []
     
-    if request.method == 'POST' and authenticated:
+    if authenticated:
         try:
-            print("Processing POST request")
-            start_date = request.form.get('start_date')
-            end_date = request.form.get('end_date')
             api_key = session['oauth_token']['access_token']
+            print(f"Using OAuth token: {api_key[:10]}...")
             
-            print(f"OAuth token: {api_key}")  # Add this debug print
+            # Fetch tags
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
             
-            # Make a test API call
-            headers = get_api_headers(api_key)
-            test_response = requests.get(f"{BASE_URL}subscribers", headers=headers)
-            print(f"Test API call response: {test_response.status_code}")
-            print(f"Test API response: {test_response.text}")
+            tags_response = requests.get(f"{BASE_URL}tags", headers=headers)
+            print(f"Tags API Response Status: {tags_response.status_code}")
+            print(f"Tags API Response: {tags_response.text}")
             
-            # Rest of your code...
-            
+            if tags_response.status_code == 200:
+                tags_data = tags_response.json()
+                tags = tags_data.get('tags', [])
+                print(f"Found {len(tags)} tags")
+            else:
+                print(f"Failed to get tags: {tags_response.text}")
+                
         except Exception as e:
-            print(f"ERROR in form processing: {str(e)}")
-            print(f"Full error details: {repr(e)}")
+            print(f"Error fetching tags: {str(e)}")
             return render_template('index.html', authenticated=authenticated, error=str(e))
     
-    return render_template('index.html', authenticated=authenticated)
+    return render_template('index.html', authenticated=authenticated, tags=tags)
 
 @app.route('/results')
 def show_results():
@@ -801,6 +806,7 @@ def oauth_callback():
         client_secret=CLIENT_SECRET,
         authorization_response=request.url
     )
+    print(f"OAuth token received: {token}")  # Debug print
     session['oauth_token'] = token
     return redirect(url_for('index'))
 
