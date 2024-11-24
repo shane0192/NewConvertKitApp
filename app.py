@@ -216,25 +216,15 @@ def index():
     print(f"Session contents at index: {session}")
     
     if request.method == 'POST':
-        # Handle form submission
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        paperboy_start = request.form.get('paperboy_start')
-        selected_tags = request.form.getlist('tags')
-        selected_fields = request.form.getlist('custom_fields')
+        # Store form data in session
+        session['start_date'] = request.form.get('start_date')
+        session['end_date'] = request.form.get('end_date')
+        session['paperboy_start_date'] = request.form.get('paperboy_start')
+        session['selected_tags'] = request.form.getlist('tags')
+        session['selected_fields'] = request.form.getlist('custom_fields')
         
-        # Process the form data (you can add your existing processing logic here)
-        # For now, let's just print the data
         print(f"Form submitted with: {request.form}")
-        
-        # Add your processing logic here
-        # You might want to redirect to a results page or render a template with results
-        return render_template('results.html', 
-                            start_date=start_date,
-                            end_date=end_date,
-                            paperboy_start=paperboy_start,
-                            selected_tags=selected_tags,
-                            selected_fields=selected_fields)
+        return redirect(url_for('show_results'))
     
     # GET request handling (your existing code)
     authenticated = 'access_token' in session
@@ -257,118 +247,49 @@ def index():
 
 @app.route('/results')
 def show_results():
-    if 'api_key' not in session:
+    """Show analysis results"""
+    if 'access_token' not in session:
         return redirect(url_for('index'))
-        
-    api_key = session['api_key']
-    start_date = session['start_date']
-    end_date = session['end_date']
     
-    # Format dates for API
-    start_date_formatted = f"{start_date}T00:00:00Z" if start_date else None
-    end_date_formatted = f"{end_date}T23:59:59Z" if end_date else None
-    
-    # Get total subscribers for selected date range
-    total_recent_subscribers = get_subscribers_by_date_range(
-        api_key,
-        start_date_formatted,
-        end_date_formatted
-    )
-    
-    # Get subscribers by tags for selected date range
-    creator_network_count = get_subscribers_by_tag_with_dates(
-        "Creator Network",
-        api_key,
-        start_date_formatted,
-        end_date_formatted
-    )
-    
-    fb_ads_count = get_subscribers_by_tag_with_dates(
-        "Facebook Ads",
-        api_key,
-        start_date_formatted,
-        end_date_formatted
-    )
-    
-    sparkloop_count = get_subscribers_by_tag_with_dates(
-        "SparkLoop - Engaged",
-        api_key,
-        start_date_formatted,
-        end_date_formatted
-    )
-    
-    # Create tag_counts dictionary for selected date range
-    tag_counts = {
-        "Creator Network": creator_network_count,
-        "Facebook Ads": fb_ads_count,
-        "Sparkloop": sparkloop_count
-    }
-    
-    # Calculate organic for selected date range
-    tagged_subscribers = sum(tag_counts.values())
-    organic_subscribers = total_recent_subscribers - tagged_subscribers
-    
-    # Get Paperboy all-time metrics (since PAPERBOY_START_DATE)
-    paperboy_total_subscribers = get_subscribers_by_date_range(
-        api_key,
-        PAPERBOY_START_DATE,
-        end_date_formatted
-    )
-    
-    # Get Paperboy attributed subscribers (FB Ads + Sparkloop since start date)
-    paperboy_fb_ads = get_subscribers_by_tag_with_dates(
-        "Facebook Ads",
-        api_key,
-        PAPERBOY_START_DATE,
-        end_date_formatted
-    )
-    
-    paperboy_sparkloop = get_subscribers_by_tag_with_dates(
-        "SparkLoop - Engaged",
-        api_key,
-        PAPERBOY_START_DATE,
-        end_date_formatted
-    )
-    
-    paperboy_attributed = paperboy_fb_ads + paperboy_sparkloop
-    
-    print(f"Paperboy total: {paperboy_total_subscribers}, FB Ads: {paperboy_fb_ads}, Sparkloop: {paperboy_sparkloop}")
-    
-    # Get existing metrics
-    total_recent_subscribers = session.get('total_recent_subscribers', 0)
-    tag_counts = session.get('tag_counts', {})
-    
-    # Get paperboy start date from session
+    # Get data from session
+    api_key = session['access_token']
+    start_date = session.get('start_date')
+    end_date = session.get('end_date')
     paperboy_start = session.get('paperboy_start_date')
-    print(f"Using Paperboy start date: {paperboy_start}")  # Debug log
+    selected_tags = session.get('selected_tags', [])
+    selected_fields = session.get('selected_fields', [])
+
+    # Initialize empty results
+    tag_counts = {}
+    field_counts = {}
+    total_subscribers = 0
+    paperboy_subscribers = 0
     
-    # Format dates properly for API
-    paperboy_start_iso = f"{paperboy_start}T00:00:00Z" if paperboy_start else None
-    current_date_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Get subscriber counts
-    subscribers_at_start = get_total_subscribers_at_date(api_key, paperboy_start_iso)
-    current_subscribers = get_total_subscribers_at_date(api_key, current_date_iso)
-    
-    total_growth = current_subscribers - subscribers_at_start
-    growth_percentage = ((current_subscribers - subscribers_at_start) / subscribers_at_start * 100) if subscribers_at_start > 0 else 0
+    try:
+        # Get subscriber counts using your existing functions
+        total_subscribers = get_subscribers_last_x_days(start_date, end_date, api_key)
+        paperboy_subscribers = get_subscribers_since_paperboy(paperboy_start, api_key)
+        
+        # Get tag and field counts
+        for tag in selected_tags:
+            tag_counts[tag] = get_subscribers_by_tag(tag, api_key)
+        
+        for field in selected_fields:
+            field_counts[field] = get_subscribers_by_field(field, api_key)
+            
+    except Exception as e:
+        print(f"Error processing data: {e}")
+        flash("Error processing data. Please try again.")
+        return redirect(url_for('index'))
     
     return render_template('results.html',
-                        start_date=start_date,
-                        end_date=end_date,
-                        total_recent_subscribers=total_recent_subscribers,
-                        tag_counts=tag_counts,
-                        organic_subscribers=organic_subscribers,
-                        # New Paperboy variables
-                        paperboy_start_date=PAPERBOY_START_DATE[:10],
-                        paperboy_total_subscribers=paperboy_total_subscribers,
-                        paperboy_attributed=paperboy_attributed,
-                        paperboy_fb_ads=paperboy_fb_ads,
-                        paperboy_sparkloop=paperboy_sparkloop,
-                        subscribers_at_start=subscribers_at_start,
-                        current_subscribers=current_subscribers,
-                        total_growth=total_growth,
-                        growth_percentage=round(growth_percentage, 1))
+                         start_date=start_date,
+                         end_date=end_date,
+                         paperboy_start=paperboy_start,
+                         tag_counts=tag_counts,
+                         field_counts=field_counts,
+                         total_subscribers=total_subscribers,
+                         paperboy_subscribers=paperboy_subscribers)
 
 # Function to fetch available tags (for dropdown)
 def get_available_tags():
