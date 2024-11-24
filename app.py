@@ -210,22 +210,41 @@ def get_available_custom_fields(api_key):
         return []
 
 print("\n=== Registering first index route ===")
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
     """Home page route"""
-    # Debug print to see what's in the session
     print(f"Session contents at index: {session}")
     
+    if request.method == 'POST':
+        # Handle form submission
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        paperboy_start = request.form.get('paperboy_start')
+        selected_tags = request.form.getlist('tags')
+        selected_fields = request.form.getlist('custom_fields')
+        
+        # Process the form data (you can add your existing processing logic here)
+        # For now, let's just print the data
+        print(f"Form submitted with: {request.form}")
+        
+        # Add your processing logic here
+        # You might want to redirect to a results page or render a template with results
+        return render_template('results.html', 
+                            start_date=start_date,
+                            end_date=end_date,
+                            paperboy_start=paperboy_start,
+                            selected_tags=selected_tags,
+                            selected_fields=selected_fields)
+    
+    # GET request handling (your existing code)
     authenticated = 'access_token' in session
     print(f"Authenticated status: {authenticated}")
     
-    # If authenticated, get tags and custom fields
     tags = []
     custom_fields = []
     if authenticated:
         try:
             api_key = session['access_token']
-            # Get tags and custom fields using the OAuth token
             tags = get_available_tags(api_key)
             custom_fields = get_available_custom_fields(api_key)
         except Exception as e:
