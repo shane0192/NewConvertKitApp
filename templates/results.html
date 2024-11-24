@@ -20,7 +20,13 @@
             {% endfor %}
             
             <div class="source-stat">
-                <p>Organic: {{ organic_subscribers }} ({{ (organic_subscribers / total_recent_subscribers * 100) | round(1) }}%)</p>
+                <p>Organic: {{ organic_subscribers }} 
+                    {% if total_recent_subscribers > 0 %}
+                        ({{ (organic_subscribers / total_recent_subscribers * 100) | round(1) }}%)
+                    {% else %}
+                        (0.0%)
+                    {% endif %}
+                </p>
                 <div class="progress-bar">
                     <div class="progress" style="width: {{ (organic_subscribers / total_recent_subscribers * 100) }}%"></div>
                 </div>
@@ -66,6 +72,13 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div class="growth-metrics">
+        <h2>Growth Since Paperboy</h2>
+        <p>Starting Subscribers: {{ subscribers_at_start }}</p>
+        <p>Current Subscribers: {{ current_subscribers }}</p>
+        <p>Total Growth: {{ total_growth }} subscribers ({{ growth_percentage }}%)</p>
     </div>
 </div>
 

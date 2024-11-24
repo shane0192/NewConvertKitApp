@@ -1,100 +1,113 @@
-function calculateRevenue() {
-    const data = {
-        list_size: document.getElementById('list_size').value,
-        open_rate: document.getElementById('open_rate').value,
-        click_rate: document.getElementById('click_rate').value,
-        avg_purchase: document.getElementById('avg_purchase').value,
-        conversion_rate: document.getElementById('conversion_rate').value,
-        emails_per_month: document.getElementById('emails_per_month').value
-    };
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default dates
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    document.querySelector('input[name="end_date"]').value = today.toISOString().split('T')[0];
+    document.querySelector('input[name="start_date"]').value = thirtyDaysAgo.toISOString().split('T')[0];
+    
+    // Form validation and submission
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', handleFormSubmit);
+    }
+});
 
-    fetch('/calculate', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        const resultsText = `Monthly Metrics:
-• Email Opens: ${data.monthly_opens.toLocaleString()}
-• Clicks: ${data.monthly_clicks.toLocaleString()}
-• Purchases: ${data.monthly_purchases.toLocaleString()}
-• Revenue: $${data.monthly_revenue.toLocaleString()}
-
-Annual Revenue: $${data.annual_revenue.toLocaleString()}`;
-        
-        document.getElementById('results').textContent = resultsText;
-    })
-    .catch(error => {
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    
+    // Show loading state
+    const submitButton = this.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.textContent;
+    submitButton.textContent = 'Validating...';
+    submitButton.disabled = true;
+    
+    // Get both API credentials
+    const apiKey = document.querySelector('#api_key').value;
+    const oauthToken = document.querySelector('#oauth_token').value;
+    
+    // Validate both fields are present
+    if (!apiKey || !oauthToken) {
+        showAlert('Both API Key and OAuth Token are required', 'danger');
+        resetButton(submitButton, originalButtonText);
+        return;
+    }
+    
+    try {
+        const response = await validateCredentials(apiKey, oauthToken);
+        handleValidationResponse(response, this, submitButton, originalButtonText);
+    } catch (error) {
         console.error('Error:', error);
-        document.getElementById('results').textContent = 'An error occurred. Please try again.';
-    });
+        showAlert('An error occurred while validating the API credentials. Please try again.', 'danger');
+        resetButton(submitButton, originalButtonText);
+    }
 }
 
-function validateApiKey() {
-    const apiKey = document.getElementById('api_key').value;
-    console.log('Validating API key...');  // Debug log
-    
-    fetch('/validate_api_key', {
+async function validateCredentials(apiKey, oauthToken) {
+    const response = await fetch('/validate_api_key', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({ api_key: apiKey })
-    })
-    .then(response => {
-        console.log('Got response:', response);  // Debug log
-        return response.json();
-    })
-    .then(data => {
-        console.log('Parsed data:', data);  // Debug log
-        if (data.valid) {
-            console.log('Tags received:', data.tags);  // Debug log
-            console.log('Custom fields received:', data.custom_fields);  // Debug log
-            populateDropdowns(data.tags, data.custom_fields);
-        } else {
-            console.error('API key validation failed:', data.error);  // Debug log
-            alert('Invalid API key: ' + data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Fetch error:', error);  // Debug log
-        alert('An error occurred while validating the API key');
+        body: new URLSearchParams({
+            'api_key': apiKey,
+            'oauth_token': oauthToken
+        })
     });
+    return response.json();
 }
 
-function populateDropdowns(tags, customFields) {
-    console.log('Populating dropdowns with tags:', tags);
-    const tagsSelect = document.getElementById('tags');
-    const customFieldsSelect = document.getElementById('custom_fields');
+function handleValidationResponse(data, form, submitButton, originalButtonText) {
+    if (data.valid) {
+        updateDropdowns(data.tags, data.custom_fields);
+        enableFormFields();
+        showAlert('API credentials validated successfully!', 'success');
+        setTimeout(() => form.submit(), 1000);
+    } else {
+        showAlert(data.error || 'Invalid API credentials. Please check both API Key and OAuth Token.', 'danger');
+        resetButton(submitButton, originalButtonText);
+    }
+}
+
+function updateDropdowns(tags, customFields) {
+    updateSelect('select[name="tags"]', tags);
+    updateSelect('select[name="custom_fields"]', customFields);
+}
+
+function updateSelect(selector, options) {
+    const select = document.querySelector(selector);
+    if (select) {
+        select.innerHTML = '';
+        options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option;
+            optionElement.textContent = option;
+            select.appendChild(optionElement);
+        });
+    }
+}
+
+function enableFormFields() {
+    document.querySelectorAll('select, input[type="date"]')
+        .forEach(element => element.disabled = false);
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.textContent = message;
     
-    // Clear existing options
-    tagsSelect.innerHTML = '';
-    customFieldsSelect.innerHTML = '';
-    
-    // Define the exact tags we want to pre-select (matching exactly what's in your API)
-    const tagsToSelect = ['Creator Network - Confirmed', 'Facebook Ads'];
-    
-    // Add tags
-    tags.forEach(tag => {
-        const option = new Option(tag, tag);
-        if (tagsToSelect.includes(tag)) {
-            option.selected = true;
-            console.log('Pre-selecting tag:', tag);
-        }
-        tagsSelect.add(option);
-    });
-    
-    // Add custom fields
-    customFields.forEach(field => {
-        const option = new Option(field, field);
-        // Match the exact custom field name from your API
-        if (field === 'rh_isref') {
-            option.selected = true;
-            console.log('Pre-selecting custom field:', field);
-        }
-        customFieldsSelect.add(option);
-    });
+    const form = document.querySelector('form');
+    if (form) {
+        form.insertBefore(alertDiv, form.firstChild);
+        
+        // Remove alert after 5 seconds
+        setTimeout(() => alertDiv.remove(), 5000);
+    }
+}
+
+function resetButton(button, originalText) {
+    button.textContent = originalText;
+    button.disabled = false;
 } 

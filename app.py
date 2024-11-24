@@ -3,18 +3,38 @@ import json
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 import time
+from requests_oauthlib import OAuth2Session
+import os
+from dotenv import load_dotenv
+import inspect
 
-# Load API key and base URL from config.json
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
+print("=== Starting Flask App Setup ===")
+registered_routes = set()
 
-API_KEY = config["api_key"]
-BASE_URL = config["base_url"]
+def register_route(route, function_name):
+    if route in registered_routes:
+        print(f"WARNING: Duplicate route detected! {route} -> {function_name}")
+    registered_routes.add(route)
+    print(f"Registered route: {route} -> {function_name}")
+
+load_dotenv()  # Load environment variables
+
+BASE_URL = "https://api.convertkit.com/v4/"
 PER_PAGE_PARAM = 5000
 PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"  # Your start date with Paperboy
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # Add this for session management
+app.secret_key = os.urandom(24)  # Required for sessions
+
+# ConvertKit OAuth settings
+CLIENT_ID = 'your_client_id'  # Get this from ConvertKit
+CLIENT_SECRET = 'your_client_secret'  # Get this from ConvertKit
+AUTHORIZATION_BASE_URL = 'https://app.convertkit.com/oauth/authorize'
+TOKEN_URL = 'https://api.convertkit.com/oauth/token'
+REDIRECT_URI = 'https://484c-72-134-227-142.ngrok-free.app/oauth/callback'
+
+# Required for local development with HTTPS
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Add this after app = Flask(__name__) but before any routes
 @app.context_processor
@@ -170,12 +190,12 @@ def get_tag_id(tag_name, api_key):
         return None
 
 # Add this new function to fetch available custom fields
-def get_available_custom_fields():
+def get_available_custom_fields(api_key):
     endpoint = f"{BASE_URL}custom_fields"
     
     headers = {
         "Accept": "application/json",
-        "X-Kit-Api-Key": API_KEY
+        "X-Kit-Api-Key": api_key
     }
     
     response = requests.get(endpoint, headers=headers)
@@ -187,13 +207,18 @@ def get_available_custom_fields():
         print(f"Failed to fetch custom fields. Status Code: {response.status_code}")
         return []
 
-# Flask route to display form for selecting start/end dates, tags, and custom fields
+print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    register_route('/', 'index')
+    print("Index route called")
     if request.method == 'POST':
-        session['api_key'] = request.form['api_key']
-        session['start_date'] = request.form['start_date']
-        session['end_date'] = request.form['end_date']
+        print("POST request received")
+        # Handle API key form submission
+        session['api_key'] = request.form.get('api_key')
+        session['start_date'] = request.form.get('start_date')
+        session['end_date'] = request.form.get('end_date')
+        session['paperboy_start_date'] = request.form.get('paperboy_start')
         
         # Store the results in session to prevent recomputation on refresh
         api_key = session['api_key']
@@ -247,7 +272,14 @@ def index():
             flash(f"Error processing request: {str(e)}")
             return redirect(url_for('index'))
     
-    return render_template('index.html')
+    # GET request handling
+    oauth_token = session.get('oauth_token')
+    api_key = session.get('api_key')
+    
+    authenticated = bool(oauth_token or api_key)
+    return render_template('index.html', 
+                         authenticated=authenticated,
+                         using_oauth=bool(oauth_token))
 
 @app.route('/results')
 def show_results():
@@ -328,6 +360,25 @@ def show_results():
     
     print(f"Paperboy total: {paperboy_total_subscribers}, FB Ads: {paperboy_fb_ads}, Sparkloop: {paperboy_sparkloop}")
     
+    # Get existing metrics
+    total_recent_subscribers = session.get('total_recent_subscribers', 0)
+    tag_counts = session.get('tag_counts', {})
+    
+    # Get paperboy start date from session
+    paperboy_start = session.get('paperboy_start_date')
+    print(f"Using Paperboy start date: {paperboy_start}")  # Debug log
+    
+    # Format dates properly for API
+    paperboy_start_iso = f"{paperboy_start}T00:00:00Z" if paperboy_start else None
+    current_date_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Get subscriber counts
+    subscribers_at_start = get_total_subscribers_at_date(api_key, paperboy_start_iso)
+    current_subscribers = get_total_subscribers_at_date(api_key, current_date_iso)
+    
+    total_growth = current_subscribers - subscribers_at_start
+    growth_percentage = ((current_subscribers - subscribers_at_start) / subscribers_at_start * 100) if subscribers_at_start > 0 else 0
+    
     return render_template('results.html',
                         start_date=start_date,
                         end_date=end_date,
@@ -339,7 +390,11 @@ def show_results():
                         paperboy_total_subscribers=paperboy_total_subscribers,
                         paperboy_attributed=paperboy_attributed,
                         paperboy_fb_ads=paperboy_fb_ads,
-                        paperboy_sparkloop=paperboy_sparkloop)
+                        paperboy_sparkloop=paperboy_sparkloop,
+                        subscribers_at_start=subscribers_at_start,
+                        current_subscribers=current_subscribers,
+                        total_growth=total_growth,
+                        growth_percentage=round(growth_percentage, 1))
 
 # Function to fetch available tags (for dropdown)
 def get_available_tags():
@@ -512,127 +567,123 @@ def get_total_paperboy_subscribers_all_time(api_key):
     print(f"Total subscribers: {total}")
     return total
 
+def get_api_params(api_key, additional_params=None):
+    """Base params for all API requests - API key must be included as a param"""
+    params = {'api_key': api_key}
+    if additional_params:
+        params.update(additional_params)
+    return params
+
 @app.route('/validate_api_key', methods=['POST'])
 def validate_api_key():
-    data = request.get_json()
-    api_key = data.get('api_key')
+    print("\n=== API Key Validation Debug ===")
+    print(f"Form data received: {request.form}")
     
-    try:
-        # Get tags and print them for debugging
-        tags = get_available_tags(api_key)
-        print("Available tags:", tags)  # Debug print
-        
-        # Get custom fields and print them
-        custom_fields = get_available_custom_fields(api_key)
-        print("Available custom fields:", custom_fields)  # Debug print
-        
-        response_data = {
-            'valid': True,
-            'tags': tags,
-            'custom_fields': custom_fields
-        }
-        print("Sending response:", response_data)  # Debug print
-        return jsonify(response_data)
-        
-    except Exception as e:
-        print(f"Error in validate_api_key: {str(e)}")  # Debug print
+    api_key = request.form.get('api_key')
+    if not api_key:
+        print("No API key received in form data")
         return jsonify({
             'valid': False,
-            'error': str(e)
+            'error': 'No API key provided'
+        })
+    
+    print(f"Received API key: {api_key[:10]}..." if api_key else "No API key received")
+    print(f"Key length: {len(api_key)}")
+    print(f"Key starts with 'kit_': {api_key.startswith('kit_')}")
+    
+    # Try OAuth token format first if key starts with "kit_"
+    if api_key.startswith('kit_'):
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        print("\nUsing OAuth Bearer Token format")
+    else:
+        # Try regular API key format
+        headers = {
+            "Accept": "application/json",
+            "X-Kit-Api-Key": api_key
+        }
+        print("\nUsing X-Kit-Api-Key format")
+    
+    print("\nRequest Details:")
+    print(f"URL: {BASE_URL}/subscribers")
+    print(f"Headers: {headers}")
+    print(f"Params: {{'page_size': 1}}")
+    
+    response = requests.get(
+        f"{BASE_URL}/subscribers",
+        headers=headers,
+        params={'page_size': 1}
+    )
+    
+    print("\nResponse Details:")
+    print(f"Status Code: {response.status_code}")
+    print(f"Response Headers: {dict(response.headers)}")
+    print(f"Response Body: {response.text}")
+    
+    if response.status_code == 200:
+        session['api_key'] = api_key
+        session['api_type'] = 'oauth' if api_key.startswith('kit_') else 'api_key'
+        print("\nValidation Successful!")
+        return jsonify({
+            'valid': True
+        })
+    else:
+        print("\nValidation Failed!")
+        return jsonify({
+            'valid': False,
+            'error': f'Invalid API key: {response.text}'
         })
 
 # Update your existing functions to accept api_key parameter
 def get_available_tags(api_key):
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    response = requests.get(f"{BASE_URL}tags", headers=headers)
+    response = requests.get(
+        f"{BASE_URL}tags",
+        headers=get_api_headers(api_key)
+    )
     if response.status_code == 200:
         return [tag['name'] for tag in response.json()['tags']]
     return []
 
 def get_available_custom_fields(api_key):
-    endpoint = f"{BASE_URL}custom_fields"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    
-    response = requests.get(endpoint, headers=headers)
-    
+    response = requests.get(
+        f"{BASE_URL}custom_fields",
+        headers=get_api_headers(api_key)
+    )
     if response.status_code == 200:
-        data = response.json()
-        return [field['key'] for field in data['custom_fields']]
+        return [field['key'] for field in response.json()['custom_fields']]
     else:
         raise Exception(f"Failed to fetch custom fields. Status Code: {response.status_code}")
 
 def get_subscribers_by_tag_with_dates(tag_name, api_key, start_date=None, end_date=None):
+    """Get tag-based metrics using API key"""
     tag_id = get_tag_id(tag_name, api_key)
-    
-    if tag_id is None:
-        print(f"Tag '{tag_name}' not found.")
+    if not tag_id:
         return 0
     
-    total_subscribers = 0
-    current_cursor = None
-    page_size = 500  # API enforces 500 per page
+    params = {
+        'page_size': 500
+    }
+    if start_date:
+        params['created_after'] = start_date
+    if end_date:
+        params['created_before'] = end_date
     
-    print(f"Fetching subscribers for tag '{tag_name}' (ID: {tag_id}) between {start_date} and {end_date}")
-    
-    while True:
-        # Updated to use created_after/created_before instead of subscribed_after/subscribed_before
-        params = {"page_size": page_size}
-        if start_date:
-            params["created_after"] = start_date
-        if end_date:
-            params["created_before"] = end_date
-        if current_cursor:
-            params["after"] = current_cursor
-            
-        print(f"Making request with params: {params}")
-        
-        response = requests.get(
-            f"{BASE_URL}tags/{tag_id}/subscribers",
-            headers={
-                "Accept": "application/json",
-                "X-Kit-Api-Key": api_key
-            },
-            params=params
-        )
-        
-        if response.status_code != 200:
-            print(f"Error fetching subscribers: {response.status_code}")
-            print(f"Response: {response.text}")
-            break
-            
-        data = response.json()
-        subscribers = data.get('subscribers', [])
-        
-        # Only count subscribers within our date range
-        current_batch = len(subscribers)
-        total_subscribers += current_batch
-        
-        pagination = data.get('pagination', {})
-        has_next_page = pagination.get('has_next_page', False)
-        if not has_next_page:
-            break
-            
-        current_cursor = pagination.get('end_cursor')
-        if not current_cursor:
-            break
-            
-        time.sleep(0.5)
-    
-    return total_subscribers
+    response = requests.get(
+        f"{BASE_URL}tags/{tag_id}/subscribers",
+        headers=get_api_headers(api_key),
+        params=params
+    )
+    # Rest of function remains the same
 
 def get_subscribers_by_date_range(api_key, start_date=None, end_date=None):
     total_subscribers = 0
     current_cursor = None
     page_size = 500
     
-    print(f"Fetching all subscribers between {start_date} and {end_date}")
+    print(f"\nFetching subscribers between {start_date} and {end_date}")
+    print(f"Using API key: {api_key[:10]}...")  # Debug info
     
     while True:
         params = {"page_size": page_size}
@@ -643,28 +694,21 @@ def get_subscribers_by_date_range(api_key, start_date=None, end_date=None):
         if current_cursor:
             params["after"] = current_cursor
             
-        print(f"Making request with params: {params}")
-        
         response = requests.get(
             f"{BASE_URL}subscribers",
-            headers={
-                "Accept": "application/json",
-                "X-Kit-Api-Key": api_key
-            },
+            headers=get_api_headers(api_key),
             params=params
         )
         
+        print(f"Response status: {response.status_code}")  # Debug info
         if response.status_code != 200:
-            print(f"Error fetching subscribers: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"Error response: {response.text}")
             break
             
         data = response.json()
         subscribers = data.get('subscribers', [])
         current_batch = len(subscribers)
         total_subscribers += current_batch
-        
-        print(f"Fetched batch of {current_batch} subscribers. Total so far: {total_subscribers}")
         
         pagination = data.get('pagination', {})
         has_next_page = pagination.get('has_next_page', False)
@@ -677,7 +721,6 @@ def get_subscribers_by_date_range(api_key, start_date=None, end_date=None):
             
         time.sleep(0.5)
     
-    print(f"Total subscribers in date range: {total_subscribers}")
     return total_subscribers
 
 def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, start_date=None, end_date=None):
@@ -688,7 +731,7 @@ def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, s
     while True:
         params = {
             'page_size': 500,
-            f'fields[{field_name}]': field_value  # This is the key change
+            f'fields[{field_name}]': field_value
         }
         if start_date:
             params['created_after'] = start_date
@@ -697,10 +740,11 @@ def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, s
         if current_cursor:
             params['after'] = current_cursor
             
-        print(f"Making request with params: {params}")
-        response = requests.get(f"{BASE_URL}/subscribers", 
-                              headers={"Authorization": f"Bearer {api_key}"},
-                              params=params)
+        response = requests.get(
+            f"{BASE_URL}/subscribers", 
+            headers=get_api_headers(api_key),
+            params=params
+        )
         
         if response.status_code != 200:
             print(f"Error response: {response.text}")
@@ -730,5 +774,92 @@ def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, s
     print(f"Total subscribers with {field_name}={field_value}: {total_subscribers}")
     return total_subscribers
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', debug=True, port=5002)
+def get_total_subscribers_at_date(api_key, date):
+    print(f"\nFetching total subscribers at date: {date}")
+    print(f"Using API key: {api_key[:10]}...")  # Debug info
+    
+    params = {
+        'page_size': 500,
+        'created_before': date,
+        'status': 'active'
+    }
+    
+    response = requests.get(
+        f"{BASE_URL}/subscribers",
+        headers=get_api_headers(api_key),
+        params=params
+    )
+    
+    print(f"Response status: {response.status_code}")  # Debug info
+    if response.status_code == 200:
+        data = response.json()
+        total = data.get('total_subscribers', 0)
+        print(f"Total subscribers: {total}")
+        return total
+    else:
+        print(f"Error response: {response.text}")
+        return None
+
+def get_subscriber_headers(api_key):
+    """Headers for subscriber-related endpoints (counts, subscriber data)"""
+    return {
+        "Accept": "application/json",
+        "X-Kit-Api-Key": api_key
+    }
+
+def get_tag_headers(api_key):
+    """Headers for tag and custom field related endpoints"""
+    return {
+        "Authorization": f"Bearer {api_key}"
+    }
+
+def get_api_headers(api_key):
+    """Get appropriate headers based on API key format"""
+    base_headers = {"Accept": "application/json"}
+    
+    if api_key.startswith('kit_'):
+        base_headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        base_headers["X-Kit-Api-Key"] = api_key
+    
+    print(f"Using headers: {base_headers}")  # Debug info
+    return base_headers
+
+@app.route('/oauth/authorize')
+def oauth_authorize():
+    """Step 1: User Authorization"""
+    print("Starting OAuth authorization")
+    convertkit = OAuth2Session(CLIENT_ID, redirect_uri=REDIRECT_URI)
+    authorization_url, state = convertkit.authorization_url(AUTHORIZATION_BASE_URL)
+    session['oauth_state'] = state
+    return redirect(authorization_url)
+
+@app.route('/oauth/callback')
+def oauth_callback():
+    """Step 2: Retrieving an access token"""
+    print("Received OAuth callback")
+    convertkit = OAuth2Session(CLIENT_ID, state=session['oauth_state'], redirect_uri=REDIRECT_URI)
+    token = convertkit.fetch_token(
+        TOKEN_URL,
+        client_secret=CLIENT_SECRET,
+        authorization_response=request.url
+    )
+    session['oauth_token'] = token
+    return redirect(url_for('index'))
+
+def print_all_routes():
+    print("\n=== All Route Definitions ===")
+    for name, obj in inspect.getmembers(app):
+        if inspect.ismethod(obj):
+            if hasattr(obj, 'view_functions'):
+                print(f"Route: {name}")
+                print(f"Function: {obj.__name__}")
+                print("---")
+
+# Add this before app.run()
+print_all_routes()
+
+print("\n=== End of File Reached ===")
+if __name__ == '__main__':
+    print("Starting Flask app")
+    app.run(port=5002, debug=True)

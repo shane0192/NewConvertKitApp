@@ -17,19 +17,25 @@
         
         <!-- API Key Form -->
         <div id="apiKeyForm">
-            <div class="form-group">
-                <label for="api_key">ConvertKit API Key</label>
-                <div class="input-group">
-                    <input type="password" class="form-control" id="api_key" name="api_key" 
-                           placeholder="Enter your ConvertKit API key" required>
-                    <div class="input-group-append">
-                        <button class="btn btn-outline-secondary" type="button" 
-                                onclick="toggleApiKeyVisibility()">Show/Hide</button>
+            {% if not authenticated %}
+                <div class="auth-options">
+                    <div class="api-key-option">
+                        <h4>Option 1: API Key</h4>
+                        <div class="form-group">
+                            <label for="api_key">ConvertKit V4 API Key</label>
+                            <input type="text" id="api_key" name="api_key" class="form-control" required>
+                            <small class="form-text text-muted">Found in Account Settings → Advanced under "V4 Keys"</small>
+                        </div>
+                    </div>
+                    
+                    <div class="oauth-option">
+                        <h4>Option 2: OAuth (Recommended)</h4>
+                        <a href="{{ url_for('oauth_authorize') }}" class="btn btn-primary">
+                            Connect with ConvertKit
+                        </a>
                     </div>
                 </div>
-                <small class="form-text text-muted">Your API key will not be stored and is only used for this session.</small>
-            </div>
-            <button type="button" class="btn btn-primary" onclick="validateApiKey()">Validate API Key</button>
+            {% endif %}
         </div>
 
         <!-- Main Data Form (initially hidden) -->
@@ -48,9 +54,8 @@
             </div>
 
             <div class="form-group">
-                <label for="paperboy_start_date">Paperboy Start Date</label>
-                <input type="date" class="form-control" id="paperboy_start_date" 
-                       name="paperboy_start_date" required>
+                <label for="paperboy_start">Paperboy Start Date</label>
+                <input type="date" id="paperboy_start" name="paperboy_start" class="form-control" required>
             </div>
 
             <div class="form-group">
@@ -149,6 +154,27 @@
                 select.appendChild(opt);
             });
         }
+
+        // When the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set end date to today
+            const today = new Date();
+            const endDateInput = document.querySelector('input[name="end_date"]');
+            endDateInput.value = today.toISOString().split('T')[0];
+            
+            // Set start date to 30 days ago
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            const startDateInput = document.querySelector('input[name="start_date"]');
+            startDateInput.value = thirtyDaysAgo.toISOString().split('T')[0];
+            
+            // Set default Paperboy start date
+            const paperboyStartInput = document.querySelector('#paperboy_start');
+            paperboyStartInput.value = '2024-10-29'; // Default value
+            
+            // Log the value to make sure it's set
+            console.log('Paperboy start date set to:', paperboyStartInput.value);
+        });
     </script>
 </body>
 </html>
