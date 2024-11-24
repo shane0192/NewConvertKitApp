@@ -857,3 +857,8 @@ print("\n=== End of File Reached ===")
 if __name__ == '__main__':
     print("Starting Flask app")
     app.run(port=5002, debug=True)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
