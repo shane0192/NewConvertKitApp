@@ -210,76 +210,58 @@ def get_available_custom_fields(api_key):
 print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    register_route('/', 'index')
-    print("Index route called")
-    if request.method == 'POST':
-        print("POST request received")
-        # Handle API key form submission
-        session['api_key'] = request.form.get('api_key')
-        session['start_date'] = request.form.get('start_date')
-        session['end_date'] = request.form.get('end_date')
-        session['paperboy_start_date'] = request.form.get('paperboy_start')
-        
-        # Store the results in session to prevent recomputation on refresh
-        api_key = session['api_key']
-        start_date = session['start_date']
-        end_date = session['end_date']
-        
-        start_date_formatted = f"{start_date}T00:00:00Z" if start_date else None
-        end_date_formatted = f"{end_date}T23:59:59Z" if end_date else None
-        
-        try:
-            total_subscribers = get_subscribers_by_date_range(
-                api_key, 
-                start_date_formatted, 
-                end_date_formatted
-            )
-            
-            creator_network = get_subscribers_by_tag_with_dates(
-                "Creator Network",
-                api_key,
-                start_date_formatted,
-                end_date_formatted
-            )
-            
-            fb_ads = get_subscribers_by_tag_with_dates(
-                "Facebook Ads",
-                api_key,
-                start_date_formatted,
-                end_date_formatted
-            )
-            
-            referrals = get_subscribers_by_custom_field_and_date(
-                'rh_isref', 
-                'YES', 
-                api_key, 
-                start_date_formatted, 
-                end_date_formatted
-            )
-            
-            # Store results in session
-            session['results'] = {
-                'total_subscribers': total_subscribers,
-                'creator_network': creator_network,
-                'fb_ads': fb_ads,
-                'referrals': referrals,
-                'organic': total_subscribers - (creator_network + fb_ads + referrals)
-            }
-            
-            return redirect(url_for('show_results'))
-            
-        except Exception as e:
-            flash(f"Error processing request: {str(e)}")
-            return redirect(url_for('index'))
+    authenticated = 'oauth_token' in session
     
-    # GET request handling
-    oauth_token = session.get('oauth_token')
-    api_key = session.get('api_key')
+    if request.method == 'POST' and authenticated:
+        # Get form data
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        paperboy_start_date = request.form.get('paperboy_start')
+        api_key = session['oauth_token']['access_token']
+        
+        # Get data for the selected date range
+        total_recent_subscribers = get_subscribers_by_date_range(api_key, start_date, end_date)
+        
+        # Get tag counts
+        tag_counts = {
+            'Facebook Ads': get_subscribers_by_tag_with_dates('Facebook Ads', api_key, start_date, end_date),
+            'Creator Network': get_subscribers_by_tag_with_dates('Creator Network', api_key, start_date, end_date)
+        }
+        
+        # Calculate organic subscribers
+        attributed_subscribers = sum(tag_counts.values())
+        organic_subscribers = total_recent_subscribers - attributed_subscribers
+        
+        # Get Paperboy stats
+        paperboy_total_subscribers = get_subscribers_by_date_range(api_key, paperboy_start_date, end_date)
+        paperboy_fb_ads = get_subscribers_by_tag_with_dates('Facebook Ads', api_key, paperboy_start_date, end_date)
+        paperboy_sparkloop = get_subscribers_by_custom_field_and_date('rh_isref', 'YES', api_key, paperboy_start_date, end_date)
+        paperboy_attributed = paperboy_fb_ads + paperboy_sparkloop
+        
+        # Get growth metrics
+        subscribers_at_start = get_total_subscribers_at_date(api_key, paperboy_start_date)
+        current_subscribers = get_total_subscribers_at_date(api_key, end_date)
+        total_growth = current_subscribers - subscribers_at_start
+        growth_percentage = round((total_growth / subscribers_at_start * 100), 1) if subscribers_at_start > 0 else 0
+        
+        return render_template('results.html',
+            start_date=start_date,
+            end_date=end_date,
+            total_recent_subscribers=total_recent_subscribers,
+            tag_counts=tag_counts,
+            organic_subscribers=organic_subscribers,
+            paperboy_start_date=paperboy_start_date,
+            paperboy_total_subscribers=paperboy_total_subscribers,
+            paperboy_attributed=paperboy_attributed,
+            paperboy_fb_ads=paperboy_fb_ads,
+            paperboy_sparkloop=paperboy_sparkloop,
+            subscribers_at_start=subscribers_at_start,
+            current_subscribers=current_subscribers,
+            total_growth=total_growth,
+            growth_percentage=growth_percentage
+        )
     
-    authenticated = bool(oauth_token or api_key)
-    return render_template('index.html', 
-                         authenticated=authenticated,
-                         using_oauth=bool(oauth_token))
+    return render_template('index.html', authenticated=authenticated)
 
 @app.route('/results')
 def show_results():

@@ -35,55 +35,55 @@
                         </a>
                     </div>
                 </div>
+            {% else %}
+                <!-- Show the form when authenticated -->
+                <form id="dataForm" method="POST" style="display: block;">
+                    <input type="hidden" id="validated_api_key" name="api_key">
+                    <input type="hidden" id="account_name" name="account_name">
+                    
+                    <div class="form-group">
+                        <label for="start_date">Start Date</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="end_date">End Date</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="paperboy_start">Paperboy Start Date</label>
+                        <input type="date" id="paperboy_start" name="paperboy_start" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tags">Select Tags</label>
+                        <select name="tags" id="tags" multiple class="form-control">
+                            {% for tag in tags %}
+                                <option value="{{ tag }}" 
+                                        {% if tag == 'Facebook Ads' or tag == 'Creator Network' %}selected{% endif %}>
+                                    {{ tag }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="custom_fields">Select Custom Fields</label>
+                        <select name="custom_fields" id="custom_fields" multiple class="form-control">
+                            {% for field in custom_fields %}
+                                <option value="{{ field }}"
+                                        {% if field == 'rh_isref' %}selected{% endif %}>
+                                    {{ field }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                </form>
             {% endif %}
         </div>
-
-        <!-- Main Data Form (initially hidden) -->
-        <form id="dataForm" method="POST">
-            <input type="hidden" id="validated_api_key" name="api_key">
-            <input type="hidden" id="account_name" name="account_name">
-            
-            <div class="form-group">
-                <label for="start_date">Start Date</label>
-                <input type="date" class="form-control" id="start_date" name="start_date" required>
-            </div>
-
-            <div class="form-group">
-                <label for="end_date">End Date</label>
-                <input type="date" class="form-control" id="end_date" name="end_date" required>
-            </div>
-
-            <div class="form-group">
-                <label for="paperboy_start">Paperboy Start Date</label>
-                <input type="date" id="paperboy_start" name="paperboy_start" class="form-control" required>
-            </div>
-
-            <div class="form-group">
-                <label for="tags">Select Tags</label>
-                <select name="tags" id="tags" multiple class="form-control">
-                    {% for tag in tags %}
-                        <option value="{{ tag }}" 
-                                {% if tag == 'Facebook Ads' or tag == 'Creator Network' %}selected{% endif %}>
-                            {{ tag }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="custom_fields">Select Custom Fields</label>
-                <select name="custom_fields" id="custom_fields" multiple class="form-control">
-                    {% for field in custom_fields %}
-                        <option value="{{ field }}"
-                                {% if field == 'rh_isref' %}selected{% endif %}>
-                            {{ field }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <button type="submit" class="btn btn-primary">Submit</button>
-        </form>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
