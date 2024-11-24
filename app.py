@@ -210,26 +210,31 @@ def get_available_custom_fields(api_key):
         return []
 
 print("\n=== Registering first index route ===")
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        if 'api_key' not in session:
-            print("No API key in session")
-            return redirect(url_for('oauth_authorize'))
-            
-        # Your existing POST handling code
-        start_date = request.form['start_date']
-        end_date = request.form['end_date']
-        
-        # Debug print
-        print(f"Processing request with API key: {session.get('api_key')}")
-        
-        task1 = count_subscribers.delay(session['api_key'], start_date)
-        task2 = count_subscribers.delay(session['api_key'], end_date)
-        
-        return render_template('counting.html', task_ids=[task1.id, task2.id])
+    """Home page route"""
+    # Debug print to see what's in the session
+    print(f"Session contents at index: {session}")
     
-    return render_template('index.html')
+    authenticated = 'access_token' in session
+    print(f"Authenticated status: {authenticated}")
+    
+    # If authenticated, get tags and custom fields
+    tags = []
+    custom_fields = []
+    if authenticated:
+        try:
+            api_key = session['access_token']
+            # Get tags and custom fields using the OAuth token
+            tags = get_available_tags(api_key)
+            custom_fields = get_available_custom_fields(api_key)
+        except Exception as e:
+            print(f"Error fetching tags/fields: {e}")
+    
+    return render_template('index.html', 
+                         authenticated=authenticated,
+                         tags=tags,
+                         custom_fields=custom_fields)
 
 @app.route('/results')
 def show_results():
