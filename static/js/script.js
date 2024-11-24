@@ -31,4 +31,70 @@ Annual Revenue: $${data.annual_revenue.toLocaleString()}`;
         console.error('Error:', error);
         document.getElementById('results').textContent = 'An error occurred. Please try again.';
     });
+}
+
+function validateApiKey() {
+    const apiKey = document.getElementById('api_key').value;
+    console.log('Validating API key...');  // Debug log
+    
+    fetch('/validate_api_key', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ api_key: apiKey })
+    })
+    .then(response => {
+        console.log('Got response:', response);  // Debug log
+        return response.json();
+    })
+    .then(data => {
+        console.log('Parsed data:', data);  // Debug log
+        if (data.valid) {
+            console.log('Tags received:', data.tags);  // Debug log
+            console.log('Custom fields received:', data.custom_fields);  // Debug log
+            populateDropdowns(data.tags, data.custom_fields);
+        } else {
+            console.error('API key validation failed:', data.error);  // Debug log
+            alert('Invalid API key: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);  // Debug log
+        alert('An error occurred while validating the API key');
+    });
+}
+
+function populateDropdowns(tags, customFields) {
+    console.log('Populating dropdowns with tags:', tags);
+    const tagsSelect = document.getElementById('tags');
+    const customFieldsSelect = document.getElementById('custom_fields');
+    
+    // Clear existing options
+    tagsSelect.innerHTML = '';
+    customFieldsSelect.innerHTML = '';
+    
+    // Define the exact tags we want to pre-select (matching exactly what's in your API)
+    const tagsToSelect = ['Creator Network - Confirmed', 'Facebook Ads'];
+    
+    // Add tags
+    tags.forEach(tag => {
+        const option = new Option(tag, tag);
+        if (tagsToSelect.includes(tag)) {
+            option.selected = true;
+            console.log('Pre-selecting tag:', tag);
+        }
+        tagsSelect.add(option);
+    });
+    
+    // Add custom fields
+    customFields.forEach(field => {
+        const option = new Option(field, field);
+        // Match the exact custom field name from your API
+        if (field === 'rh_isref') {
+            option.selected = true;
+            console.log('Pre-selecting custom field:', field);
+        }
+        customFieldsSelect.add(option);
+    });
 } 

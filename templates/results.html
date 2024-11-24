@@ -1,83 +1,87 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Results</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-</head>
-<body>
-    <div class="container">
-        <!-- Recent Data Section -->
-        <section class="mt-5 mb-5">
-            <h1 class="mb-4">Recent Data</h1>
-            <h5 class="text-muted mb-4">Date Range: {{ start_date }} to {{ end_date }}</h5>
+<div class="results">
+    <h2>Results for {{ start_date }} to {{ end_date }}</h2>
+    
+    <div class="stats">
+        <div class="total-stats">
+            <h3>Total New Subscribers: {{ total_recent_subscribers }}</h3>
+            <div class="progress-bar">
+                <div class="progress" style="width: 100%"></div>
+            </div>
+        </div>
 
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Total Subscribers Added</h2>
-                    <p class="card-text">{{ total_subscribers }}</p>
+        <div class="breakdown">
+            {% for tag, count in tag_counts.items() %}
+            <div class="source-stat">
+                <p>{{ tag }}: {{ count }} ({{ (count / total_recent_subscribers * 100) | round(1) }}%)</p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (count / total_recent_subscribers * 100) }}%"></div>
                 </div>
             </div>
-
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Subscribers</h2>
-                    <div class="ml-3">
-                        {% for tag, count in tag_counts.items() %}
-                            {% if tag == "Facebook Ads" or tag == "Creator Network" %}
-                                <p>{{ tag }}: {{ count }} ({{ calculate_percentage(count, total_subscribers) | round(1) }}%)</p>
-                            {% endif %}
-                        {% endfor %}
-                        <p>Sparkloop: {{ rh_isref_count }} ({{ calculate_percentage(rh_isref_count, total_subscribers) | round(1) }}%)</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Organic Subscribers</h2>
-                    <p class="card-text">{{ organic_subscribers }} ({{ organic_percentage | round(1) }}%)</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- All Time Section -->
-        <section class="mb-5">
-            <h1 class="mb-4">All Time</h1>
+            {% endfor %}
             
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Subscribers Added Since Paperboy Start</h2>
-                    <p class="card-text">{{ total_since_start }}</p>
-                    <p class="card-text text-muted">Growth: {{ calculate_percentage(total_since_start, total_subscribers) | round(1) }}%</p>
+            <div class="source-stat">
+                <p>Organic: {{ organic_subscribers }} ({{ (organic_subscribers / total_recent_subscribers * 100) | round(1) }}%)</p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (organic_subscribers / total_recent_subscribers * 100) }}%"></div>
                 </div>
             </div>
-
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Total Subscribers from Paperboy</h2>
-                    <p class="card-text">{{ total_paperboy_all_time }}</p>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h2 class="card-title h4">Average Subscribers Per Day</h2>
-                    <div class="ml-3">
-                        <p>Before Start Date: {{ avg_subs_before_start | round(1) }} subscribers/day ({{ avg_subs_before_percentage | round(1) }}% growth)</p>
-                        <p>After Start Date: {{ avg_subs_since_start | round(1) }} subscribers/day ({{ avg_subs_since_percentage | round(1) }}% growth)</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <a href="/">Go Back</a>
+        </div>
     </div>
+    
+    <div class="actions">
+        <a href="/" class="btn">New Search</a>
+        <button onclick="window.print()" class="btn">Print Results</button>
+    </div>
+</div>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.0.7/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
-</body>
-</html>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    line-height: 1.6;
+}
+
+.results {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f0f0f0;
+    border-radius: 10px;
+    margin: 5px 0;
+}
+
+.progress {
+    height: 100%;
+    background-color: #4CAF50;
+    border-radius: 10px;
+}
+
+.source-stat {
+    margin: 15px 0;
+}
+
+.actions {
+    margin-top: 20px;
+}
+
+.btn {
+    padding: 10px 20px;
+    margin: 0 10px;
+    border-radius: 5px;
+    text-decoration: none;
+    color: white;
+    background-color: #4CAF50;
+    border: none;
+    cursor: pointer;
+}
+
+.btn:hover {
+    background-color: #45a049;
+}
+</style>
 

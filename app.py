@@ -1,7 +1,7 @@
 import requests
 import json
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 import time
 
 # Load API key and base URL from config.json
@@ -10,9 +10,10 @@ with open("config.json", "r") as config_file:
 
 API_KEY = config["api_key"]
 BASE_URL = config["base_url"]
-PER_PAGE_PARAM = 1000
+PER_PAGE_PARAM = 5000
 
 app = Flask(__name__)
+app.secret_key = 'your-secret-key-here'  # Add this for session management
 
 # Add this after app = Flask(__name__) but before any routes
 @app.context_processor
@@ -29,133 +30,118 @@ def calculate_percentage_filter(part, whole):
 # Function to get total subscribers added in a custom date range
 def get_subscribers_last_x_days(start_date, end_date, api_key):
     endpoint = f"{BASE_URL}subscribers"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    
-    params = {
-        "created_after": start_date,
-        "created_before": end_date,
-        "page": 1,
-        "per_page": PER_PAGE_PARAM
-    }
-    
     total_subscribers = 0
+    next_cursor = None
+    per_page = 5000  # ConvertKit max
     
-    # First request to get total pages
-    response = requests.get(endpoint, headers=headers, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        total_pages = data.get('total_pages', 1)
-        print(f"Total pages: {total_pages}")
-        
-        # Loop through all pages
-        for page in range(1, total_pages + 1):
-            params['page'] = page
-            print(f"Fetching page {page} of {total_pages}...")
+    while True:
+        params = {
+            "created_after": start_date,
+            "created_before": end_date,
+            "per_page": per_page
+        }
+        if next_cursor:
+            params["cursor"] = next_cursor
             
-            response = requests.get(endpoint, headers=headers, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                subscribers_this_page = len(data['subscribers'])
-                total_subscribers += subscribers_this_page
-                print(f"Found {subscribers_this_page} subscribers on page {page}")
-            else:
-                print(f"Failed to get page {page}. Status Code: {response.status_code}")
-                break
+        response = requests.get(endpoint, headers={"Accept": "application/json", "X-Kit-Api-Key": api_key}, params=params)
+        if response.status_code != 200:
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        total_subscribers += len(subscribers)
+        
+        next_cursor = data.get('meta', {}).get('next_cursor')
+        if not next_cursor:
+            break
     
-    print(f"Total subscribers found: {total_subscribers}")
     return total_subscribers
 
 # Function to get subscribers with a specific tag
 def get_subscribers_by_tag(tag_name, api_key):
     tag_id = get_tag_id(tag_name, api_key)
-    
     if tag_id is None:
         return 0
-    
-    endpoint = f"{BASE_URL}tags/{tag_id}/subscribers"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    
-    params = {
-        "page": 1,
-        "per_page": PER_PAGE_PARAM
-    }
-    
-    total_subscribers = 0
-    
-    # First request to get total pages
-    response = requests.get(endpoint, headers=headers, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        total_pages = data.get('total_pages', 1)
-        print(f"Total pages for {tag_name}: {total_pages}")
         
-        # Loop through all pages
-        for page in range(1, total_pages + 1):
-            params['page'] = page
-            print(f"Fetching {tag_name} page {page} of {total_pages}...")
-            
-            response = requests.get(endpoint, headers=headers, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                subscribers_this_page = len(data['subscribers'])
-                total_subscribers += subscribers_this_page
-                print(f"Found {subscribers_this_page} {tag_name} subscribers on page {page}")
-            else:
-                print(f"Failed to get page {page}. Status Code: {response.status_code}")
-                break
+    total_subscribers = 0
+    next_cursor = None
+    per_page = 5000
     
-    print(f"Total {tag_name} subscribers found: {total_subscribers}")
+    while True:
+        params = {"per_page": per_page}
+        if next_cursor:
+            params["cursor"] = next_cursor
+            
+        response = requests.get(
+            f"{BASE_URL}tags/{tag_id}/subscribers",
+            headers={"Accept": "application/json", "X-Kit-Api-Key": api_key},
+            params=params
+        )
+        
+        if response.status_code != 200:
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        total_subscribers += len(subscribers)
+        
+        next_cursor = data.get('meta', {}).get('next_cursor')
+        if not next_cursor:
+            break
+    
     return total_subscribers
 
 # Function to get subscribers based on custom field 'rh_isref'
 def get_subscribers_by_custom_field(field_name, field_value, api_key):
+    print(f"\nFetching subscribers with {field_name}={field_value}")
     endpoint = f"{BASE_URL}subscribers"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    
-    params = {
-        f"fields[{field_name}]": field_value,
-        "page": 1,
-        "per_page": PER_PAGE_PARAM
-    }
-    
     total_subscribers = 0
+    next_cursor = None
+    per_page = 5000  # ConvertKit maximum
     
-    # First request to get total pages
-    response = requests.get(endpoint, headers=headers, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        total_pages = data.get('total_pages', 1)
-        print(f"Total pages for {field_name}: {total_pages}")
-        
-        # Loop through all pages
-        for page in range(1, total_pages + 1):
-            params['page'] = page
-            print(f"Fetching {field_name} page {page} of {total_pages}...")
+    while True:
+        # Build params dict with cursor if available
+        params = {
+            f"fields[{field_name}]": field_value,
+            "per_page": per_page
+        }
+        if next_cursor:
+            params["cursor"] = next_cursor
             
-            response = requests.get(endpoint, headers=headers, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                subscribers_this_page = len([
-                    s for s in data['subscribers'] 
-                    if s.get('fields', {}).get(field_name) == field_value
-                ])
-                total_subscribers += subscribers_this_page
-                print(f"Found {subscribers_this_page} subscribers with {field_name}={field_value} on page {page}")
-            else:
-                print(f"Failed to get page {page}. Status Code: {response.status_code}")
-                break
+        print(f"Making request with params: {params}")  # Debug log
+        
+        response = requests.get(
+            endpoint,
+            headers={
+                "Accept": "application/json",
+                "X-Kit-Api-Key": api_key
+            },
+            params=params
+        )
+        
+        if response.status_code != 200:
+            print(f"Error fetching subscribers: {response.status_code}")
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        
+        # Count subscribers that match our field value
+        matching_subscribers = [
+            s for s in subscribers 
+            if s.get('fields', {}).get(field_name) == field_value
+        ]
+        current_batch = len(matching_subscribers)
+        total_subscribers += current_batch
+        
+        # Get next cursor from meta data
+        next_cursor = data.get('meta', {}).get('next_cursor')
+        print(f"Fetched batch of {current_batch} matching subscribers. Total so far: {total_subscribers}")
+        print(f"Next cursor: {next_cursor}")
+        
+        # If no next cursor, we've reached the end
+        if not next_cursor:
+            break
     
     print(f"Total subscribers with {field_name}={field_value}: {total_subscribers}")
     return total_subscribers
@@ -204,87 +190,125 @@ def get_available_custom_fields():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # Get form data including the API key
-        api_key = request.form['api_key']
-        start_date = request.form['start_date']
-        end_date = request.form['end_date']
-        paperboy_start_date = request.form['paperboy_start_date']
+        session['api_key'] = request.form['api_key']
+        session['start_date'] = request.form['start_date']
+        session['end_date'] = request.form['end_date']
         
-        # Convert dates to required format
-        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-        paperboy_start_date_obj = datetime.strptime(paperboy_start_date, "%Y-%m-%d")
+        # Store the results in session to prevent recomputation on refresh
+        api_key = session['api_key']
+        start_date = session['start_date']
+        end_date = session['end_date']
         
-        # Format dates for API
-        start_date_str = start_date_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
-        end_date_str = end_date_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
-        paperboy_start_date_str = paperboy_start_date_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        # Update all your API calls to use the submitted api_key
-        def get_headers():
-            return {
-                "Accept": "application/json",
-                "X-Kit-Api-Key": api_key
+        start_date_formatted = f"{start_date}T00:00:00Z" if start_date else None
+        end_date_formatted = f"{end_date}T23:59:59Z" if end_date else None
+        
+        try:
+            total_subscribers = get_subscribers_by_date_range(
+                api_key, 
+                start_date_formatted, 
+                end_date_formatted
+            )
+            
+            creator_network = get_subscribers_by_tag_with_dates(
+                "Creator Network",
+                api_key,
+                start_date_formatted,
+                end_date_formatted
+            )
+            
+            fb_ads = get_subscribers_by_tag_with_dates(
+                "Facebook Ads",
+                api_key,
+                start_date_formatted,
+                end_date_formatted
+            )
+            
+            referrals = get_subscribers_by_custom_field_and_date(
+                'rh_isref', 
+                'YES', 
+                api_key, 
+                start_date_formatted, 
+                end_date_formatted
+            )
+            
+            # Store results in session
+            session['results'] = {
+                'total_subscribers': total_subscribers,
+                'creator_network': creator_network,
+                'fb_ads': fb_ads,
+                'referrals': referrals,
+                'organic': total_subscribers - (creator_network + fb_ads + referrals)
             }
-
-        # Update each function call to use the new API key
-        total_subscribers = get_subscribers_last_x_days(start_date_str, end_date_str, api_key)
-        
-        # Get tag counts with new API key
-        tag_counts = {}
-        for tag in ["Facebook Ads", "Creator Network"]:
-            count = get_subscribers_by_tag(tag, api_key)
-            if count > 0:
-                tag_counts[tag] = count
-
-        # Get RH_ISREF count with new API key
-        rh_isref_count = get_subscribers_by_custom_field('rh_isref', 'YES', api_key)
-        
-        # Calculate organic subscribers
-        tagged_subscribers = sum(tag_counts.values()) + rh_isref_count
-        organic_subscribers = total_subscribers - tagged_subscribers
-        
-        # Calculate organic percentage
-        organic_percentage = calculate_percentage_filter(organic_subscribers, total_subscribers)
-        
-        # Get total subscribers since Paperboy start date
-        total_since_start = get_subscribers_last_x_days(paperboy_start_date_str, datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"), api_key)
-        
-        # Get total Paperboy subscribers all time
-        total_paperboy_all_time = get_total_paperboy_subscribers_all_time(api_key)
-        
-        # Calculate days and averages
-        earliest_date = "2023-01-01T00:00:00Z"  # Or your preferred start date
-        subscribers_before_paperboy = get_subscribers_last_x_days(earliest_date, paperboy_start_date_str, api_key)
-        subscribers_since_paperboy = get_subscribers_last_x_days(paperboy_start_date_str, datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"), api_key)
-        
-        days_before_start = (paperboy_start_date_obj - datetime.strptime(earliest_date, "%Y-%m-%dT%H:%M:%SZ")).days
-        days_since_start = (datetime.now() - paperboy_start_date_obj).days
-        
-        avg_subs_before_start = subscribers_before_paperboy / days_before_start if days_before_start > 0 else 0
-        avg_subs_since_start = subscribers_since_paperboy / days_since_start if days_since_start > 0 else 0
-        
-        avg_subs_before_percentage = calculate_percentage_filter(avg_subs_before_start, subscribers_before_paperboy)
-        avg_subs_since_percentage = calculate_percentage_filter(avg_subs_since_start, subscribers_since_paperboy)
-
-        return render_template('results.html',
-                             total_subscribers=total_subscribers,
-                             tag_counts=tag_counts,
-                             organic_subscribers=organic_subscribers,
-                             rh_isref_count=rh_isref_count,
-                             total_since_start=total_since_start,
-                             total_paperboy_all_time=total_paperboy_all_time,
-                             avg_subs_before_start=avg_subs_before_start,
-                             avg_subs_since_start=avg_subs_since_start,
-                             avg_subs_before_percentage=avg_subs_before_percentage,
-                             avg_subs_since_percentage=avg_subs_since_percentage,
-                             organic_percentage=organic_percentage,
-                             start_date=start_date,
-                             end_date=end_date)
+            
+            return redirect(url_for('show_results'))
+            
+        except Exception as e:
+            flash(f"Error processing request: {str(e)}")
+            return redirect(url_for('index'))
     
-    # GET request - return initial form
-    return render_template('index.html', tags=None, custom_fields=None)
+    return render_template('index.html')
 
+@app.route('/results')
+def show_results():
+    if 'api_key' not in session:
+        return redirect(url_for('index'))
+        
+    api_key = session['api_key']
+    start_date = session['start_date']
+    end_date = session['end_date']
+    
+    # Format dates for API
+    start_date_formatted = f"{start_date}T00:00:00Z" if start_date else None
+    end_date_formatted = f"{end_date}T23:59:59Z" if end_date else None
+    
+    # Get total subscribers
+    total_recent_subscribers = get_subscribers_by_date_range(
+        api_key,
+        start_date_formatted,
+        end_date_formatted
+    )
+    
+    # Get subscribers by tags
+    creator_network_count = get_subscribers_by_tag_with_dates(
+        "Creator Network",
+        api_key,
+        start_date_formatted,
+        end_date_formatted
+    )
+    
+    fb_ads_count = get_subscribers_by_tag_with_dates(
+        "Facebook Ads",
+        api_key,
+        start_date_formatted,
+        end_date_formatted
+    )
+    
+    sparkloop_count = get_subscribers_by_tag_with_dates(
+        "SparkLoop - Engaged",
+        api_key,
+        start_date_formatted,
+        end_date_formatted
+    )
+    
+    # Create tag_counts dictionary
+    tag_counts = {
+        "Creator Network": creator_network_count,
+        "Facebook Ads": fb_ads_count,
+        "Sparkloop": sparkloop_count
+    }
+    
+    # Calculate organic
+    tagged_subscribers = sum(tag_counts.values())
+    organic_subscribers = total_recent_subscribers - tagged_subscribers
+    
+    print(f"Rendering template with: {tag_counts}")  # Debug print
+    
+    return render_template('results.html',
+                        start_date=start_date,
+                        end_date=end_date,
+                        total_recent_subscribers=total_recent_subscribers,
+                        tag_counts=tag_counts,
+                        organic_subscribers=organic_subscribers)
 
 # Function to fetch available tags (for dropdown)
 def get_available_tags():
@@ -332,61 +356,62 @@ def get_all_time_subscribers_by_tag(tag_name, api_key):
         print(f"Tag '{tag_name}' not found.")
         return 0
     
-    # Use the correct endpoint for tagged subscribers
-    endpoint = f"{BASE_URL}subscribers"
-    
-    headers = {
-        "Accept": "application/json",
-        "X-Kit-Api-Key": api_key
-    }
-    
-    params = {
-        "per_page": PER_PAGE_PARAM,
-        "filter[tag_id]": tag_id  # Add filter for specific tag
-    }
-    
     total_subscribers = 0
-    more_pages = True
-    seen_subscriber_ids = set()
+    current_cursor = None
+    page_size = 500  # API enforces 500 per page
     
-    while more_pages:
-        print(f"Fetching subscribers with tag '{tag_name}' (page {params['page']})...")
-        response = requests.get(endpoint, headers=headers, params=params)
+    print(f"Fetching all subscribers for tag '{tag_name}' (ID: {tag_id})...")
+    
+    while True:
+        # Build params dict
+        params = {"page_size": page_size}
+        if current_cursor:
+            params["after"] = current_cursor
+            
+        print(f"Making request with params: {params}")
         
-        if response.status_code == 200:
-            data = response.json()
-            subscribers_this_page = data.get('subscribers', [])
-            pagination_info = data.get('pagination', {})
-            
-            # Count only subscribers that have our tag
-            new_subscribers = 0
-            for subscriber in subscribers_this_page:
-                subscriber_id = subscriber.get('id')
-                if subscriber_id and subscriber_id not in seen_subscriber_ids:
-                    seen_subscriber_ids.add(subscriber_id)
-                    new_subscribers += 1
-            
-            if new_subscribers == 0:
-                print("No new subscribers found")
-                more_pages = False
-            else:
-                total_subscribers = len(seen_subscriber_ids)
-                print(f"Found {new_subscribers} new tagged subscribers on page {params['page']}")
-                print(f"Running total of subscribers with tag: {total_subscribers}")
-                
-                if pagination_info.get('has_next_page'):
-                    # Get the next page by reading the pagination key and end cursor
-                    params['after'] = pagination_info['end_cursor']
-                    time.sleep(0.5)  # Rate limiting
-                else:
-                    print("Last page reached")
-                    more_pages = False
-        else:
-            print(f"Failed to get subscribers. Status Code: {response.status_code}")
+        response = requests.get(
+            f"{BASE_URL}tags/{tag_id}/subscribers",
+            headers={
+                "Accept": "application/json",
+                "X-Kit-Api-Key": api_key
+            },
+            params=params
+        )
+        
+        if response.status_code != 200:
+            print(f"Error fetching subscribers: {response.status_code}")
             print(f"Response: {response.text}")
-            more_pages = False
+            break
+            
+        data = response.json()
+        pagination = data.get('pagination', {})
+        print(f"Pagination data: {pagination}")
+        
+        subscribers = data.get('subscribers', [])
+        current_batch = len(subscribers)
+        total_subscribers += current_batch
+        
+        print(f"Fetched batch of {current_batch} subscribers. Total so far: {total_subscribers}")
+        
+        # Check if there are more pages
+        has_next_page = pagination.get('has_next_page', False)
+        if not has_next_page:
+            print("No more pages available")
+            break
+            
+        # Get the end_cursor for the next request
+        current_cursor = pagination.get('end_cursor')
+        if not current_cursor:
+            print("No cursor for next page")
+            break
+            
+        print(f"Moving to next page with cursor: {current_cursor}")
+        
+        # Add a small delay to avoid rate limits
+        time.sleep(0.5)
     
-    print(f"Final count of subscribers with tag '{tag_name}': {total_subscribers}")
+    print(f"Total subscribers for tag '{tag_name}': {total_subscribers}")
     return total_subscribers
 
 def get_all_time_subscribers_by_custom_field(field_name, field_value, api_key):
@@ -417,19 +442,44 @@ def get_all_time_subscribers_by_custom_field(field_name, field_value, api_key):
         return 0
 
 def get_total_paperboy_subscribers_all_time(api_key):
-    # Get all-time subscribers with RH_ISREF=YES
-    rh_isref_count = get_all_time_subscribers_by_custom_field('rh_isref', 'YES', api_key)
-    print(f"All-time RH_ISREF count: {rh_isref_count}")
+    total = 0
+    next_cursor = None
+    per_page = 1000
     
-    # Get all-time subscribers with Facebook Ads tag
-    fb_ads_count = get_all_time_subscribers_by_tag('Facebook Ads', api_key)
-    print(f"All-time Facebook Ads tag count: {fb_ads_count}")
+    while True:
+        # Prepare params with cursor if available
+        params = {
+            "per_page": per_page
+        }
+        if next_cursor:
+            params["cursor"] = next_cursor
+            
+        response = requests.get(
+            f"{BASE_URL}subscribers",
+            headers={
+                "Accept": "application/json",
+                "X-Kit-Api-Key": api_key
+            },
+            params=params
+        )
+        
+        if response.status_code != 200:
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        total += len(subscribers)
+        
+        # Get next cursor from response
+        next_cursor = data.get('meta', {}).get('next_cursor')
+        print(f"Fetched {len(subscribers)} total subscribers, next cursor: {next_cursor}")
+        
+        # If no next cursor, we've reached the end
+        if not next_cursor:
+            break
     
-    # Total is the sum of both
-    total_count = rh_isref_count + fb_ads_count
-    print(f"Total Paperboy subscribers all-time: {total_count}")
-    
-    return total_count
+    print(f"Total subscribers: {total}")
+    return total
 
 @app.route('/validate_api_key', methods=['POST'])
 def validate_api_key():
@@ -437,32 +487,24 @@ def validate_api_key():
     api_key = data.get('api_key')
     
     try:
-        headers = {
-            "Accept": "application/json",
-            "X-Kit-Api-Key": api_key
-        }
+        # Get tags and print them for debugging
+        tags = get_available_tags(api_key)
+        print("Available tags:", tags)  # Debug print
         
-        # Just validate by fetching tags
-        tags_response = requests.get(f"{BASE_URL}tags", headers=headers)
-        if tags_response.status_code != 200:
-            return jsonify({
-                'valid': False,
-                'error': 'Invalid API key'
-            })
-            
-        tags = [tag['name'] for tag in tags_response.json()['tags']]
+        # Get custom fields and print them
+        custom_fields = get_available_custom_fields(api_key)
+        print("Available custom fields:", custom_fields)  # Debug print
         
-        # Get custom fields
-        custom_fields_response = requests.get(f"{BASE_URL}custom_fields", headers=headers)
-        custom_fields = [field['key'] for field in custom_fields_response.json()['custom_fields']]
-        
-        return jsonify({
+        response_data = {
             'valid': True,
             'tags': tags,
             'custom_fields': custom_fields
-        })
-            
+        }
+        print("Sending response:", response_data)  # Debug print
+        return jsonify(response_data)
+        
     except Exception as e:
+        print(f"Error in validate_api_key: {str(e)}")  # Debug print
         return jsonify({
             'valid': False,
             'error': str(e)
@@ -470,20 +512,14 @@ def validate_api_key():
 
 # Update your existing functions to accept api_key parameter
 def get_available_tags(api_key):
-    endpoint = f"{BASE_URL}tags"
-    
     headers = {
         "Accept": "application/json",
         "X-Kit-Api-Key": api_key
     }
-    
-    response = requests.get(endpoint, headers=headers)
-    
+    response = requests.get(f"{BASE_URL}tags", headers=headers)
     if response.status_code == 200:
-        data = response.json()
-        return [tag['name'] for tag in data['tags']]
-    else:
-        raise Exception(f"Failed to fetch tags. Status Code: {response.status_code}")
+        return [tag['name'] for tag in response.json()['tags']]
+    return []
 
 def get_available_custom_fields(api_key):
     endpoint = f"{BASE_URL}custom_fields"
@@ -501,5 +537,167 @@ def get_available_custom_fields(api_key):
     else:
         raise Exception(f"Failed to fetch custom fields. Status Code: {response.status_code}")
 
+def get_subscribers_by_tag_with_dates(tag_name, api_key, start_date=None, end_date=None):
+    tag_id = get_tag_id(tag_name, api_key)
+    
+    if tag_id is None:
+        print(f"Tag '{tag_name}' not found.")
+        return 0
+    
+    total_subscribers = 0
+    current_cursor = None
+    page_size = 500  # API enforces 500 per page
+    
+    print(f"Fetching subscribers for tag '{tag_name}' (ID: {tag_id}) between {start_date} and {end_date}")
+    
+    while True:
+        # Updated to use created_after/created_before instead of subscribed_after/subscribed_before
+        params = {"page_size": page_size}
+        if start_date:
+            params["created_after"] = start_date
+        if end_date:
+            params["created_before"] = end_date
+        if current_cursor:
+            params["after"] = current_cursor
+            
+        print(f"Making request with params: {params}")
+        
+        response = requests.get(
+            f"{BASE_URL}tags/{tag_id}/subscribers",
+            headers={
+                "Accept": "application/json",
+                "X-Kit-Api-Key": api_key
+            },
+            params=params
+        )
+        
+        if response.status_code != 200:
+            print(f"Error fetching subscribers: {response.status_code}")
+            print(f"Response: {response.text}")
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        
+        # Only count subscribers within our date range
+        current_batch = len(subscribers)
+        total_subscribers += current_batch
+        
+        pagination = data.get('pagination', {})
+        has_next_page = pagination.get('has_next_page', False)
+        if not has_next_page:
+            break
+            
+        current_cursor = pagination.get('end_cursor')
+        if not current_cursor:
+            break
+            
+        time.sleep(0.5)
+    
+    return total_subscribers
+
+def get_subscribers_by_date_range(api_key, start_date=None, end_date=None):
+    total_subscribers = 0
+    current_cursor = None
+    page_size = 500
+    
+    print(f"Fetching all subscribers between {start_date} and {end_date}")
+    
+    while True:
+        params = {"page_size": page_size}
+        if start_date:
+            params["created_after"] = start_date
+        if end_date:
+            params["created_before"] = end_date
+        if current_cursor:
+            params["after"] = current_cursor
+            
+        print(f"Making request with params: {params}")
+        
+        response = requests.get(
+            f"{BASE_URL}subscribers",
+            headers={
+                "Accept": "application/json",
+                "X-Kit-Api-Key": api_key
+            },
+            params=params
+        )
+        
+        if response.status_code != 200:
+            print(f"Error fetching subscribers: {response.status_code}")
+            print(f"Response: {response.text}")
+            break
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        current_batch = len(subscribers)
+        total_subscribers += current_batch
+        
+        print(f"Fetched batch of {current_batch} subscribers. Total so far: {total_subscribers}")
+        
+        pagination = data.get('pagination', {})
+        has_next_page = pagination.get('has_next_page', False)
+        if not has_next_page:
+            break
+            
+        current_cursor = pagination.get('end_cursor')
+        if not current_cursor:
+            break
+            
+        time.sleep(0.5)
+    
+    print(f"Total subscribers in date range: {total_subscribers}")
+    return total_subscribers
+
+def get_subscribers_by_custom_field_and_date(field_name, field_value, api_key, start_date=None, end_date=None):
+    print(f"\nFetching subscribers with {field_name}={field_value}")
+    total_subscribers = 0
+    current_cursor = None
+    
+    while True:
+        params = {
+            'page_size': 500,
+            f'fields[{field_name}]': field_value  # This is the key change
+        }
+        if start_date:
+            params['created_after'] = start_date
+        if end_date:
+            params['created_before'] = end_date
+        if current_cursor:
+            params['after'] = current_cursor
+            
+        print(f"Making request with params: {params}")
+        response = requests.get(f"{BASE_URL}/subscribers", 
+                              headers={"Authorization": f"Bearer {api_key}"},
+                              params=params)
+        
+        if response.status_code != 200:
+            print(f"Error response: {response.text}")
+            return 0
+            
+        data = response.json()
+        subscribers = data.get('subscribers', [])
+        
+        # Only count subscribers that have the custom field value matching
+        matching_subscribers = [s for s in subscribers if s.get('fields', {}).get(field_name) == field_value]
+        current_batch = len(matching_subscribers)
+        total_subscribers += current_batch
+        
+        print(f"Fetched batch of {current_batch} matching subscribers. Total so far: {total_subscribers}")
+        
+        pagination = data.get('pagination', {})
+        if not pagination.get('has_next_page', False):
+            break
+            
+        current_cursor = pagination.get('next')
+        if not current_cursor:
+            break
+            
+        print(f"Next cursor: {current_cursor}")
+        time.sleep(0.5)  # Rate limiting
+    
+    print(f"Total subscribers with {field_name}={field_value}: {total_subscribers}")
+    return total_subscribers
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=True, port=5002)

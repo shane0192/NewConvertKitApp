@@ -55,23 +55,25 @@
 
             <div class="form-group">
                 <label for="tags">Select Tags</label>
-                <select multiple class="form-control" id="tags" name="tags">
-                    {% if tags %}
-                        {% for tag in tags %}
-                            <option value="{{ tag }}">{{ tag }}</option>
-                        {% endfor %}
-                    {% endif %}
+                <select name="tags" id="tags" multiple class="form-control">
+                    {% for tag in tags %}
+                        <option value="{{ tag }}" 
+                                {% if tag == 'Facebook Ads' or tag == 'Creator Network' %}selected{% endif %}>
+                            {{ tag }}
+                        </option>
+                    {% endfor %}
                 </select>
             </div>
 
             <div class="form-group">
                 <label for="custom_fields">Select Custom Fields</label>
-                <select multiple class="form-control" id="custom_fields" name="custom_fields">
-                    {% if custom_fields %}
-                        {% for field in custom_fields %}
-                            <option value="{{ field }}">{{ field }}</option>
-                        {% endfor %}
-                    {% endif %}
+                <select name="custom_fields" id="custom_fields" multiple class="form-control">
+                    {% for field in custom_fields %}
+                        <option value="{{ field }}"
+                                {% if field == 'rh_isref' %}selected{% endif %}>
+                            {{ field }}
+                        </option>
+                    {% endfor %}
                 </select>
             </div>
 
