@@ -211,67 +211,18 @@ def get_available_custom_fields(api_key):
 print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    authenticated = 'oauth_token' in session
-    print(f"Session authenticated: {authenticated}")
-    tags = []
+    if request.method == 'POST':
+        # Your POST handling code
+        start_date = request.form['start_date']
+        end_date = request.form['end_date']
+        
+        # Start the background tasks
+        task1 = count_subscribers.delay(session['api_key'], start_date)
+        task2 = count_subscribers.delay(session['api_key'], end_date)
+        
+        return render_template('counting.html', task_ids=[task1.id, task2.id])
     
-    if authenticated:
-        try:
-            api_key = session['oauth_token']['access_token']
-            print(f"Using OAuth token: {api_key[:10]}...")
-            
-            # Fetch tags for display
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
-            
-            tags_response = requests.get(f"{BASE_URL}tags", headers=headers)
-            print(f"Tags API Response Status: {tags_response.status_code}")
-            
-            if tags_response.status_code == 200:
-                tags_data = tags_response.json()
-                tags = tags_data.get('tags', [])
-                print(f"Found {len(tags)} tags")
-            
-            # Handle form submission
-            if request.method == 'POST':
-                print("Processing POST request")
-                start_date = request.form.get('start_date')
-                end_date = request.form.get('end_date')
-                selected_tags = request.form.getlist('tags')  # Get multiple selected tags
-                print(f"Form data - Start: {start_date}, End: {end_date}, Tags: {selected_tags}")
-                
-                try:
-                    # Make API calls for subscriber counts
-                    start_count = get_total_subscribers_at_date(api_key, start_date)
-                    print(f"Start date count: {start_count}")
-                    end_count = get_total_subscribers_at_date(api_key, end_date)
-                    print(f"End date count: {end_count}")
-                    
-                    growth = end_count - start_count if end_count and start_count else None
-                    print(f"Calculated growth: {growth}")
-                    
-                    return render_template('index.html', 
-                                        authenticated=authenticated,
-                                        tags=tags,
-                                        start_count=start_count,
-                                        end_count=end_count,
-                                        growth=growth)
-                except Exception as e:
-                    print(f"Error processing subscriber counts: {str(e)}")
-                    print(f"Full error details: {repr(e)}")
-                    return render_template('index.html', 
-                                        authenticated=authenticated,
-                                        tags=tags,
-                                        error=str(e))
-                
-        except Exception as e:
-            print(f"Error in main handler: {str(e)}")
-            print(f"Full error details: {repr(e)}")
-            return render_template('index.html', authenticated=authenticated, error=str(e))
-    
-    return render_template('index.html', authenticated=authenticated, tags=tags)
+    return render_template('index.html')
 
 @app.route('/results')
 def show_results():
@@ -894,29 +845,6 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        api_key = session['oauth_token']['access_token']
-        
-        # Start background tasks
-        task1 = count_subscribers.delay(api_key, start_date)
-        task2 = count_subscribers.delay(api_key, end_date)
-        
-        # Store task IDs in session
-        session['counting_tasks'] = {
-            'start_date': task1.id,
-            'end_date': task2.id,
-            'dates': {
-                'start': start_date,
-                'end': end_date
-            }
-        }
-        
-        return render_template('counting.html')
-        
 @app.route('/check_progress')
 def check_progress():
     """Check the progress of counting tasks"""
