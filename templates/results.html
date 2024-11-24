@@ -32,6 +32,41 @@
         <a href="/" class="btn">New Search</a>
         <button onclick="window.print()" class="btn">Print Results</button>
     </div>
+
+    <div class="paperboy-stats">
+        <h2>Paperboy Performance (Since {{ paperboy_start_date }})</h2>
+        
+        <div class="total-stats">
+            <h3>Total New Subscribers: {{ paperboy_total_subscribers }}</h3>
+            <div class="progress-bar">
+                <div class="progress" style="width: 100%"></div>
+            </div>
+        </div>
+
+        <div class="breakdown">
+            <h4>Paperboy Attribution:</h4>
+            <div class="source-stat">
+                <p>Total Paperboy Subscribers: {{ paperboy_attributed }} ({{ (paperboy_attributed / paperboy_total_subscribers * 100) | round(1) }}%)</p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (paperboy_attributed / paperboy_total_subscribers * 100) }}%"></div>
+                </div>
+            </div>
+            
+            <div class="source-stat">
+                <p>- Facebook Ads: {{ paperboy_fb_ads }} ({{ (paperboy_fb_ads / paperboy_total_subscribers * 100) | round(1) }}%)</p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (paperboy_fb_ads / paperboy_total_subscribers * 100) }}%"></div>
+                </div>
+            </div>
+            
+            <div class="source-stat">
+                <p>- SparkLoop: {{ paperboy_sparkloop }} ({{ (paperboy_sparkloop / paperboy_total_subscribers * 100) | round(1) }}%)</p>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (paperboy_sparkloop / paperboy_total_subscribers * 100) }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -82,6 +117,22 @@ body {
 
 .btn:hover {
     background-color: #45a049;
+}
+
+.paperboy-stats {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 2px solid #eee;
+}
+
+.paperboy-stats h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+}
+
+.paperboy-stats h4 {
+    color: #34495e;
+    margin: 15px 0;
 }
 </style>
 

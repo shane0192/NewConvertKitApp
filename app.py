@@ -11,6 +11,7 @@ with open("config.json", "r") as config_file:
 API_KEY = config["api_key"]
 BASE_URL = config["base_url"]
 PER_PAGE_PARAM = 5000
+PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"  # Your start date with Paperboy
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Add this for session management
@@ -261,14 +262,14 @@ def show_results():
     start_date_formatted = f"{start_date}T00:00:00Z" if start_date else None
     end_date_formatted = f"{end_date}T23:59:59Z" if end_date else None
     
-    # Get total subscribers
+    # Get total subscribers for selected date range
     total_recent_subscribers = get_subscribers_by_date_range(
         api_key,
         start_date_formatted,
         end_date_formatted
     )
     
-    # Get subscribers by tags
+    # Get subscribers by tags for selected date range
     creator_network_count = get_subscribers_by_tag_with_dates(
         "Creator Network",
         api_key,
@@ -290,25 +291,55 @@ def show_results():
         end_date_formatted
     )
     
-    # Create tag_counts dictionary
+    # Create tag_counts dictionary for selected date range
     tag_counts = {
         "Creator Network": creator_network_count,
         "Facebook Ads": fb_ads_count,
         "Sparkloop": sparkloop_count
     }
     
-    # Calculate organic
+    # Calculate organic for selected date range
     tagged_subscribers = sum(tag_counts.values())
     organic_subscribers = total_recent_subscribers - tagged_subscribers
     
-    print(f"Rendering template with: {tag_counts}")  # Debug print
+    # Get Paperboy all-time metrics (since PAPERBOY_START_DATE)
+    paperboy_total_subscribers = get_subscribers_by_date_range(
+        api_key,
+        PAPERBOY_START_DATE,
+        end_date_formatted
+    )
+    
+    # Get Paperboy attributed subscribers (FB Ads + Sparkloop since start date)
+    paperboy_fb_ads = get_subscribers_by_tag_with_dates(
+        "Facebook Ads",
+        api_key,
+        PAPERBOY_START_DATE,
+        end_date_formatted
+    )
+    
+    paperboy_sparkloop = get_subscribers_by_tag_with_dates(
+        "SparkLoop - Engaged",
+        api_key,
+        PAPERBOY_START_DATE,
+        end_date_formatted
+    )
+    
+    paperboy_attributed = paperboy_fb_ads + paperboy_sparkloop
+    
+    print(f"Paperboy total: {paperboy_total_subscribers}, FB Ads: {paperboy_fb_ads}, Sparkloop: {paperboy_sparkloop}")
     
     return render_template('results.html',
                         start_date=start_date,
                         end_date=end_date,
                         total_recent_subscribers=total_recent_subscribers,
                         tag_counts=tag_counts,
-                        organic_subscribers=organic_subscribers)
+                        organic_subscribers=organic_subscribers,
+                        # New Paperboy variables
+                        paperboy_start_date=PAPERBOY_START_DATE[:10],
+                        paperboy_total_subscribers=paperboy_total_subscribers,
+                        paperboy_attributed=paperboy_attributed,
+                        paperboy_fb_ads=paperboy_fb_ads,
+                        paperboy_sparkloop=paperboy_sparkloop)
 
 # Function to fetch available tags (for dropdown)
 def get_available_tags():
