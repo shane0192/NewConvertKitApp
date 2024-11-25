@@ -1,18 +1,22 @@
 from celery import Celery
-import requests
+import requests 
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Get Redis URL from environment variable
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# Get Redis URL from environment variable - use REDISCLOUD_URL
+REDIS_URL = os.environ.get('REDISCLOUD_URL', 'redis://localhost:6379/0')
 
-# Configure Celery with the actual Redis URL
+# Print for debugging
+print(f"Using Redis URL: {REDIS_URL}")
+
+# Configure Celery
 celery = Celery('tasks')
 celery.conf.update(
     broker_url=REDIS_URL,
-    result_backend=REDIS_URL
+    result_backend=REDIS_URL,
+    broker_connection_retry_on_startup=True
 )
 
 @celery.task
