@@ -116,10 +116,9 @@ def get_available_tags(api_key):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Get API key from session
     api_key = session.get('api_key')
+    print(f"Index route - API key present: {api_key is not None}")
     
-    # If no API key, redirect to OAuth
     if not api_key:
         return redirect(url_for('oauth_authorize'))
         
@@ -172,16 +171,33 @@ def exchange_code_for_token(code):
 @app.route('/oauth/callback')
 def oauth_callback():
     print("Received OAuth callback")
-    code = request.args.get('code')
-    
     try:
-        token_response = exchange_code_for_token(code)
-        session['access_token'] = token_response['access_token']
-        session['api_key'] = token_response['access_token']
-        session.permanent = True
+        code = request.args.get('code')
+        state = request.args.get('state')
+        
+        # Exchange code for access token
+        token_response = requests.post(
+            'https://api.convertkit.com/oauth/token',
+            data={
+                'grant_type': 'authorization_code',
+                'code': code,
+                'client_id': os.environ['CONVERTKIT_CLIENT_ID'],
+                'client_secret': os.environ['CONVERTKIT_CLIENT_SECRET'],
+                'redirect_uri': os.environ['OAUTH_REDIRECT_URI']
+            }
+        )
+        
+        token_data = token_response.json()
+        
+        # Store the access token in session
+        session['api_key'] = token_data.get('access_token')
+        print(f"Stored API key in session: {session.get('api_key') is not None}")
+        
         return redirect(url_for('index'))
+        
     except Exception as e:
         print(f"Error in OAuth callback: {str(e)}")
+        flash('Error during authentication')
         return redirect(url_for('index'))
 
 @app.route('/logout')
