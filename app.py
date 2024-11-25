@@ -45,124 +45,97 @@ def utility_processor():
 def calculate_percentage_filter(part, whole):
     return round((part / whole) * 100, 1) if whole > 0 else 0
 
-def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
-    """Get all subscriber counts with pagination - with timeout protection"""
-    base_url = "https://api.convertkit.com/v4/subscribers"
-    results = {'total_subscribers': 0, 'tagged_subscribers': 0, 'paperboy_subscribers': 0}
+def get_subscribers_for_period(start_date, end_date, api_key, tag_id=None):
+    all_subscribers = []
+    page = 1
+    per_page = 1000
     
-    try:
-        MAX_PAGES = 5  # Limit pages to prevent timeout
-        
-        for params in [total_params, tag_params, paperboy_params]:
-            count = 0
-            page = 1
-            
-            while page <= MAX_PAGES:
-                current_params = {**params, 'page': page, 'per_page': PER_PAGE_PARAM}
-                print(f"Fetching page {page} with params: {current_params}")
-                
-                response = requests.get(
-                    base_url,
-                    headers=headers,
-                    params=current_params,
-                    timeout=5
-                )
-                response.raise_for_status()
-                data = response.json()
-                
-                if not data.get('subscribers'):
-                    break
-                    
-                count += len(data['subscribers'])
-                
-                # Break if this is the last page
-                if len(data['subscribers']) < PER_PAGE_PARAM:
-                    break
-                    
-                page += 1
-                
-            # Assign count to appropriate result
-            if params == total_params:
-                results['total_subscribers'] = count
-            elif params == tag_params and tag_params.get('filter[tags]'):
-                results['tagged_subscribers'] = count
-            elif params == paperboy_params:
-                results['paperboy_subscribers'] = count
-                
-        print(f"Final results: {results}")
-        return results
-        
-    except requests.exceptions.RequestException as e:
-        print(f"API Error: {str(e)}")
-        if hasattr(e, 'response'):
-            print(f"Response: {e.response.text}")
-        raise Exception("Error fetching subscriber data - please try a smaller date range")
-
-def get_available_tags(api_key):
-    """Get available tags with error handling"""
-    try:
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {api_key}"
+    while True:  # Keep fetching until we get all subscribers
+        params = {
+            'from': start_date.isoformat() + 'Z',
+            'to': end_date.isoformat() + 'Z',
+            'page': page,
+            'per_page': per_page
         }
+        if tag_id:
+            params['tag_id'] = tag_id
+            
+        print(f"Fetching page {page} with params: {params}")
+        
         response = requests.get(
-            "https://api.convertkit.com/v4/tags",
-            headers=headers,
-            timeout=5
+            f"{BASE_URL}subscribers",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params=params
         )
-        response.raise_for_status()
+        
+        if response.status_code != 200:
+            print(f"Error fetching subscribers: {response.text}")
+            break
+            
         data = response.json()
-        print(f"Tags response: {data}")
-        return data.get('tags', [])
-    except Exception as e:
-        print(f"Error fetching tags: {str(e)}")
-        if hasattr(e, 'response'):
-            print(f"Response content: {e.response.text}")
-        return []
+        subscribers = data.get('subscribers', [])
+        
+        if not subscribers:  # If no more subscribers, break
+            break
+            
+        all_subscribers.extend(subscribers)
+        page += 1
+        
+    return all_subscribers
+
+def calculate_daily_counts(start_date, end_date, api_key, tag_id=None):
+    """Calculate subscriber counts for each day in the range"""
+    daily_counts = {}
+    current_date = start_date
+    
+    while current_date <= end_date:
+        next_date = current_date + timedelta(days=1)
+        subscribers = get_subscribers_for_period(current_date, next_date, api_key, tag_id)
+        
+        daily_counts[current_date.strftime('%Y-%m-%d')] = len(subscribers)
+        current_date = next_date
+        
+    return daily_counts
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if 'access_token' not in session:
-        return render_template('index.html', authenticated=False)
-        
-    api_key = session.get('access_token')
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    
     if request.method == 'POST':
+        start_date = datetime.strptime(request.form['start'], '%Y-%m-%d')
+        end_date = datetime.strptime(request.form['end'], '%Y-%m-%d')
+        tag_id = request.form.get('tag')
+        
+        api_key = session.get('access_token')
+        if not api_key:
+            return redirect(url_for('oauth_authorize'))
+            
         try:
-            start_date = request.form['start_date']
-            end_date = request.form['end_date']
-            paperboy_date = request.form['paperboy_date']
-            selected_tag = request.form.get('tag')
+            # Get daily counts
+            daily_counts = calculate_daily_counts(start_date, end_date, api_key, tag_id)
             
-            print(f"Form data: start={start_date}, end={end_date}, tag={selected_tag}")
+            # Calculate totals
+            total_subscribers = sum(daily_counts.values())
+            paperboy_subscribers = sum(daily_counts.values())  # Modify this based on your paperboy logic
             
-            total_params = {
-                'from': f"{start_date}T00:00:00Z",
-                'to': f"{end_date}T23:59:59Z"
+            results = {
+                'total_subscribers': total_subscribers,
+                'tagged_subscribers': 0 if not tag_id else total_subscribers,
+                'paperboy_subscribers': paperboy_subscribers,
+                'daily_counts': daily_counts
             }
             
-            tag_params = {**total_params}
-            if selected_tag:
-                tag_params['filter[tags]'] = selected_tag
-                
-            paperboy_params = {
-                'from': f"{paperboy_date}T00:00:00Z",
-                'to': f"{paperboy_date}T23:59:59Z"
-            }
+            # Get tags for dropdown
+            tags = get_available_tags(api_key)
             
-            results = get_subscriber_counts(headers, total_params, tag_params, paperboy_params)
             return render_template('index.html', 
                                 results=results,
-                                authenticated=True,
-                                tags=get_available_tags(api_key))
+                                tags=tags,
+                                selected_tag=tag_id,
+                                start_date=request.form['start'],
+                                end_date=request.form['end'])
                                 
         except Exception as e:
-            print(f"Error in index route: {str(e)}")
-            flash(f'An error occurred: {str(e)}', 'error')
+            print(f"Error processing request: {str(e)}")
+            flash(f"Error: {str(e)}")
             return redirect(url_for('index'))
             
     return render_template('index.html', 
