@@ -118,29 +118,24 @@ def get_available_tags(api_key):
         print(f"Error fetching tags: {str(e)}")
         return []
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    api_key = session.get('api_key')
-    print(f"Index route - API key present: {api_key is not None}")
-    print(f"Session contents: {dict(session)}")  # Debug log
-    
-    if not api_key:
-        print("No API key found, redirecting to OAuth")  # Debug log
-        return redirect(url_for('oauth_authorize'))
-        
-    try:
-        tags = get_available_tags(api_key)
-        return render_template('index.html', tags=tags)
-    except Exception as e:
-        print(f"Error in index route: {str(e)}")  # Debug log
-        flash(str(e))
-        return redirect(url_for('oauth_authorize'))
+    # Check if we already have an API key in session
+    if 'api_key' in session:
+        return render_template('index.html')
+    else:
+        # If no API key, show the connect button
+        return render_template('connect.html')  # Make sure this template has your connect button
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
-    print("Starting OAuth authorization")
-    convertkit = OAuth2Session(CLIENT_ID, redirect_uri=REDIRECT_URI)
-    authorization_url, state = convertkit.authorization_url(AUTHORIZATION_BASE_URL)
+    # This is where the "Connect" button should send users
+    oauth = OAuth2Session(
+        os.environ['CONVERTKIT_CLIENT_ID'],
+        redirect_uri=REDIRECT_URI,
+        scope=['public']  # or whatever scopes you need
+    )
+    authorization_url, state = oauth.authorization_url(AUTHORIZATION_BASE_URL)
     session['oauth_state'] = state
     return redirect(authorization_url)
 
