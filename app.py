@@ -215,63 +215,38 @@ def index():
     if request.method == 'POST':
         try:
             # Get form data
-            start_date = f"{request.form['start_date']}T00:00:00Z"
-            end_date = f"{request.form['end_date']}T23:59:59Z"
-            paperboy_date = f"{request.form['paperboy_date']}T00:00:00Z"
+            start_date = request.form['start_date']
+            end_date = request.form['end_date']
+            paperboy_date = request.form['paperboy_date']
             selected_tag = request.form.get('tag')
+            
+            # Add debug logging
+            print(f"Form data: start={start_date}, end={end_date}, tag={selected_tag}")
             
             api_key = session.get('access_token')
             if not api_key:
                 flash('Please authenticate first', 'error')
                 return redirect(url_for('index'))
 
+            # Set up parameters
             headers = {
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}"
             }
-
-            # Get total subscribers for date range
-            total_params = {
-                'filter[created_at][from]': start_date,
-                'filter[created_at][to]': end_date,
-            }
             
-            # Get tagged subscribers
-            tag_params = {
-                **total_params,  # Include date filters
-                'filter[tags]': selected_tag
-            }
-            
-            # Get paperboy subscribers
-            paperboy_params = {
-                'filter[created_at][from]': paperboy_date,
-                'filter[created_at][to]': end_date,
-            }
-
-            # Make API calls
-            results = get_subscriber_counts(headers, total_params, tag_params, paperboy_params)
+            # Use Celery for the long-running task
+            task = count_subscribers.delay(api_key, start_date, end_date, paperboy_date, selected_tag)
+            results = task.get(timeout=25)  # Wait up to 25 seconds for results
             
             return render_template('index.html', 
+                                results=results,
                                 authenticated=True,
-                                results=results)
-
+                                tags=get_available_tags(api_key))
+                                
         except Exception as e:
-            print(f"Error: {str(e)}")
-            flash('Error fetching subscriber data', 'error')
+            print(f"Error in index route: {str(e)}")
+            flash(f'An error occurred: {str(e)}', 'error')
             return redirect(url_for('index'))
-
-    # GET request - show form
-    if session.get('access_token'):
-        # Get available tags for dropdown
-        try:
-            tags = get_available_tags(session['access_token'])
-            return render_template('index.html', authenticated=True, tags=tags)
-        except Exception as e:
-            print(f"Error fetching tags: {e}")
-            flash('Error fetching tags', 'error')
-            return render_template('index.html', authenticated=True, tags=[])
-    
-    return render_template('index.html', authenticated=False)
 
 def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
     """Get all subscriber counts with pagination"""
@@ -279,67 +254,49 @@ def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
     results = {'total_subscribers': 0, 'tagged_subscribers': 0, 'paperboy_subscribers': 0}
     
     try:
-        # Get total subscribers with pagination
-        page = 1
-        while True:
-            params = {**total_params, 'page': page, 'per_page': 1000}
-            response = requests.get(base_url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
-            
-            if not data.get('subscribers'):
-                break
-                
-            results['total_subscribers'] += len(data['subscribers'])
-            
-            if len(data['subscribers']) < 1000:
-                break
-                
-            page += 1
-
-        # Get tagged subscribers if tag selected
-        if tag_params.get('filter[tags]'):
+        # Process each parameter set
+        for params in [total_params, tag_params, paperboy_params]:
+            count = 0
             page = 1
+            
             while True:
-                params = {**tag_params, 'page': page, 'per_page': 1000}
-                response = requests.get(base_url, headers=headers, params=params)
+                current_params = {**params, 'page': page, 'per_page': 1000}
+                print(f"Fetching page {page} with params: {current_params}")  # Debug log
+                
+                response = requests.get(
+                    base_url, 
+                    headers=headers, 
+                    params=current_params,
+                    timeout=10
+                )
                 response.raise_for_status()
                 data = response.json()
                 
                 if not data.get('subscribers'):
                     break
                     
-                results['tagged_subscribers'] += len(data['subscribers'])
+                count += len(data['subscribers'])
+                print(f"Current count: {count}")  # Debug log
                 
                 if len(data['subscribers']) < 1000:
                     break
                     
                 page += 1
-
-        # Get paperboy subscribers
-        page = 1
-        while True:
-            params = {**paperboy_params, 'page': page, 'per_page': 1000}
-            response = requests.get(base_url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
             
-            if not data.get('subscribers'):
-                break
+            # Assign count to appropriate result
+            if params == total_params:
+                results['total_subscribers'] = count
+            elif params == tag_params and tag_params.get('filter[tags]'):
+                results['tagged_subscribers'] = count
+            elif params == paperboy_params:
+                results['paperboy_subscribers'] = count
                 
-            results['paperboy_subscribers'] += len(data['subscribers'])
-            
-            if len(data['subscribers']) < 1000:
-                break
-                
-            page += 1
-
-        print(f"Final counts: {results}")
+        print(f"Final results: {results}")  # Debug log
         return results
         
     except requests.exceptions.RequestException as e:
         print(f"API Error: {str(e)}")
-        if hasattr(e.response, 'text'):
+        if hasattr(e, 'response'):
             print(f"Response: {e.response.text}")
         raise Exception("Error fetching subscriber data")
 
@@ -350,33 +307,26 @@ def get_available_tags(api_key):
         "Authorization": f"Bearer {api_key}"
     }
     
-    tags = []
-    page = 1
-    per_page = 100  # ConvertKit's max per page
-    
     try:
-        while True:
-            response = requests.get(
-                "https://api.convertkit.com/v4/tags",
-                headers=headers,
-                params={'page': page, 'per_page': per_page}
-            )
-            response.raise_for_status()
-            
-            current_tags = response.json().get('tags', [])
-            if not current_tags:
-                break
-                
-            tags.extend(current_tags)
-            
-            if len(current_tags) < per_page:
-                break
-                
-            page += 1
-            
-        return tags
+        # Debug logging
+        print("Fetching tags...")
+        response = requests.get(
+            "https://api.convertkit.com/v4/tags",
+            headers=headers,
+            params={'page': 1, 'per_page': 100}  # Start with first page
+        )
+        response.raise_for_status()
+        data = response.json()
+        print(f"Tags response: {data}")  # Debug logging
+        
+        if 'tags' in data:
+            return data['tags']
+        return []
+        
     except Exception as e:
-        print(f"Error fetching tags: {e}")
+        print(f"Error fetching tags: {str(e)}")
+        if hasattr(e, 'response'):
+            print(f"Response: {e.response.text}")
         return []
 
 def get_custom_field_id(field_key, api_key):
