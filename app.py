@@ -106,14 +106,18 @@ def get_available_tags(api_key):
             "Authorization": f"Bearer {api_key}"
         }
         response = requests.get(
-            "https://api.convertkit.com/v3/tags",
+            "https://api.convertkit.com/v4/tags",
             headers=headers,
             timeout=5
         )
         response.raise_for_status()
-        return response.json().get('tags', [])
+        data = response.json()
+        print(f"Tags response: {data}")
+        return data.get('tags', [])
     except Exception as e:
         print(f"Error fetching tags: {str(e)}")
+        if hasattr(e, 'response'):
+            print(f"Response content: {e.response.text}")
         return []
 
 @app.route('/', methods=['GET', 'POST'])
