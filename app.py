@@ -274,32 +274,67 @@ def index():
     return render_template('index.html', authenticated=False)
 
 def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
-    """Get all subscriber counts with proper error handling"""
+    """Get all subscriber counts with pagination"""
     base_url = "https://api.convertkit.com/v4/subscribers"
-    results = {}
+    results = {'total_subscribers': 0, 'tagged_subscribers': 0, 'paperboy_subscribers': 0}
     
     try:
-        # Get total subscribers
-        total_response = requests.get(base_url, headers=headers, params=total_params)
-        total_response.raise_for_status()
-        results['total_subscribers'] = len(total_response.json()['subscribers'])
-        
-        # Get tagged subscribers
-        if tag_params['filter[tags]']:
-            tag_response = requests.get(base_url, headers=headers, params=tag_params)
-            tag_response.raise_for_status()
-            results['tagged_subscribers'] = len(tag_response.json()['subscribers'])
-        else:
-            results['tagged_subscribers'] = 0
+        # Get total subscribers with pagination
+        page = 1
+        while True:
+            params = {**total_params, 'page': page, 'per_page': 1000}
+            response = requests.get(base_url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
             
+            if not data.get('subscribers'):
+                break
+                
+            results['total_subscribers'] += len(data['subscribers'])
+            
+            if len(data['subscribers']) < 1000:
+                break
+                
+            page += 1
+
+        # Get tagged subscribers if tag selected
+        if tag_params.get('filter[tags]'):
+            page = 1
+            while True:
+                params = {**tag_params, 'page': page, 'per_page': 1000}
+                response = requests.get(base_url, headers=headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+                
+                if not data.get('subscribers'):
+                    break
+                    
+                results['tagged_subscribers'] += len(data['subscribers'])
+                
+                if len(data['subscribers']) < 1000:
+                    break
+                    
+                page += 1
+
         # Get paperboy subscribers
-        paperboy_response = requests.get(base_url, headers=headers, params=paperboy_params)
-        paperboy_response.raise_for_status()
-        results['paperboy_subscribers'] = len(paperboy_response.json()['subscribers'])
-        
-        # Calculate growth percentages
-        # ... (we'll add this in the next code block)
-        
+        page = 1
+        while True:
+            params = {**paperboy_params, 'page': page, 'per_page': 1000}
+            response = requests.get(base_url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data.get('subscribers'):
+                break
+                
+            results['paperboy_subscribers'] += len(data['subscribers'])
+            
+            if len(data['subscribers']) < 1000:
+                break
+                
+            page += 1
+
+        print(f"Final counts: {results}")
         return results
         
     except requests.exceptions.RequestException as e:
@@ -309,16 +344,37 @@ def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
         raise Exception("Error fetching subscriber data")
 
 def get_available_tags(api_key):
-    """Fetch available tags for the dropdown"""
+    """Fetch all available tags"""
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
     
+    tags = []
+    page = 1
+    per_page = 100  # ConvertKit's max per page
+    
     try:
-        response = requests.get("https://api.convertkit.com/v4/tags", headers=headers)
-        response.raise_for_status()
-        return response.json()['tags']
+        while True:
+            response = requests.get(
+                "https://api.convertkit.com/v4/tags",
+                headers=headers,
+                params={'page': page, 'per_page': per_page}
+            )
+            response.raise_for_status()
+            
+            current_tags = response.json().get('tags', [])
+            if not current_tags:
+                break
+                
+            tags.extend(current_tags)
+            
+            if len(current_tags) < per_page:
+                break
+                
+            page += 1
+            
+        return tags
     except Exception as e:
         print(f"Error fetching tags: {e}")
         return []
