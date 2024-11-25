@@ -225,18 +225,19 @@ def index():
         
         print(f"Form submitted with: {request.form}")
         
-        # Start background tasks
-        api_key = session['access_token']
-        start_task = count_subscribers.delay(api_key, session['start_date'])
-        end_task = count_subscribers.delay(api_key, session['end_date'])
+        # Start background tasks with proper authorization
+        api_key = session.get('access_token')
+        headers = {"Authorization": f"Bearer {api_key}"}  # Create proper headers
         
-        # Store task IDs in session
+        start_task = count_subscribers.delay(headers, session['start_date'])
+        end_task = count_subscribers.delay(headers, session['end_date'])
+        
         session['counting_tasks'] = {
             'start_date': start_task.id,
             'end_date': end_task.id
         }
         
-        return render_template('counting.html')  # Use existing counting template
+        return render_template('counting.html')
     
     # GET request handling (your existing code)
     authenticated = 'access_token' in session
