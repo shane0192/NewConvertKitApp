@@ -2,6 +2,7 @@ from celery import Celery
 import requests 
 import os
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
@@ -25,20 +26,22 @@ def count_subscribers(headers, date):
     print(f"Starting count for {date}")
     endpoint = "https://api.convertkit.com/v4/subscribers"
     total_subscribers = 0
-    next_cursor = None
+    cursor = None
     
     while True:
         params = {
             "created_before": f"{date}T23:59:59Z",
             "per_page": 5000
         }
-        if next_cursor:
-            params["cursor"] = next_cursor
+        
+        # Add cursor to params if we have one
+        if cursor:
+            params["cursor"] = cursor
             
         print(f"Making API request with params: {params}")
         response = requests.get(endpoint, headers=headers, params=params)
         
-        if response.status_code != 200:
+        if not response.ok:
             print(f"Error response: {response.text}")
             break
             
@@ -48,9 +51,13 @@ def count_subscribers(headers, date):
         
         print(f"Current count: {total_subscribers}")
         
-        next_cursor = data.get('meta', {}).get('next_cursor')
-        if not next_cursor:
+        # Get the next cursor from the meta data
+        cursor = data.get('meta', {}).get('next_cursor')
+        if not cursor:
             break
+            
+        # Optional: Add a small delay to avoid rate limits
+        time.sleep(0.5)
     
     print(f"Final count for {date}: {total_subscribers}")
     return total_subscribers 
