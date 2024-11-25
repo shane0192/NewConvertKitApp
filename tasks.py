@@ -35,53 +35,61 @@ def count_subscribers(self, headers, date):
             "Authorization": f"Bearer {headers}" if isinstance(headers, str) else None
         }
     
-    print(f"Using headers: {api_headers}")
-    
     try:
-        # Make initial request with just one result to get total count
-        params = {
-            'per_page': 1,
-            'page': 1,
-            'sort_order': 'desc'
-        }
+        total_subscribers = 0
+        page = 1
+        per_page = 1000  # Maximum allowed by API
+        has_more = True
         
-        # Add appropriate date filter
-        if 'T00:00:00Z' in date:
-            params['created_after'] = date
-        else:
-            params['created_before'] = date
+        while has_more:
+            params = {
+                'per_page': per_page,
+                'page': page,
+                'sort_order': 'desc'
+            }
             
-        print(f"Making API request with params: {params}")
-        
-        # Add timeout to prevent hanging
-        response = requests.get(
-            endpoint, 
-            headers=api_headers, 
-            params=params,
-            timeout=30  # 30 second timeout
-        )
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # Get total count from metadata
-        if 'meta' in data and 'total_count' in data['meta']:
-            total_count = data['meta']['total_count']
-            print(f"Got total count from meta: {total_count}")
-            return total_count
+            # Add appropriate date filter
+            if 'T00:00:00Z' in date:
+                params['created_after'] = date
+            else:
+                params['created_before'] = date
+                
+            print(f"Making API request with params: {params}")
             
-        raise ValueError("No meta.total_count in API response")
+            response = requests.get(
+                endpoint, 
+                headers=api_headers, 
+                params=params,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            subscribers = data.get('subscribers', [])
+            current_count = len(subscribers)
+            total_subscribers += current_count
+            print(f"Current count: {total_subscribers}")
+            
+            # Check if we should continue
+            if current_count < per_page:
+                has_more = False
+            else:
+                page += 1
+            
+            # Add a small delay to avoid rate limits
+            time.sleep(0.1)
+            
+        print(f"Final count for {date}: {total_subscribers}")
+        return total_subscribers
             
     except requests.exceptions.Timeout:
         print("Request timed out")
-        # Retry with exponential backoff
         self.retry(countdown=2 ** self.request.retries)
         
     except requests.exceptions.RequestException as e:
         print(f"Error making request: {e}")
         if hasattr(e.response, 'text'):
             print(f"Response text: {e.response.text}")
-        # Retry with exponential backoff
         self.retry(countdown=2 ** self.request.retries)
         
     except Exception as e:

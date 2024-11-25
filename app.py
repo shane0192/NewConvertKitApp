@@ -228,8 +228,6 @@ def index():
                 "Authorization": f"Bearer {api_key}"
             }
             
-            print(f"Using headers: {headers}")
-            
             # Start the counting tasks
             start_task = count_subscribers.delay(headers, start_date)
             end_task = count_subscribers.delay(headers, end_date)
@@ -239,31 +237,17 @@ def index():
                 'end_date': end_task.id
             }
             
-            return render_template('loading.html')
+            # Return a redirect instead of rendering template directly
+            return redirect(url_for('loading'))
             
         except Exception as e:
-            print(f"Error starting count: {e}")
+            print(f"Error starting count: {str(e)}")
             flash('An error occurred while starting the count', 'error')
             return redirect(url_for('index'))
-    
-    # GET request handling (your existing code)
-    authenticated = 'access_token' in session
-    print(f"Authenticated status: {authenticated}")
-    
-    tags = []
-    custom_fields = []
-    if authenticated:
-        try:
-            api_key = session['access_token']
-            tags = get_available_tags(api_key)
-            custom_fields = get_available_custom_fields(api_key)
-        except Exception as e:
-            print(f"Error fetching tags/fields: {e}")
-    
-    return render_template('index.html', 
-                         authenticated=authenticated,
-                         tags=tags,
-                         custom_fields=custom_fields)
+
+@app.route('/loading')
+def loading():
+    return render_template('loading.html')
 
 @app.route('/results')
 def results():
