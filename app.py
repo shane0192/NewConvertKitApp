@@ -212,6 +212,15 @@ def get_available_custom_fields(api_key):
 print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    if 'access_token' not in session:
+        return render_template('index.html', authenticated=False)
+        
+    api_key = session.get('access_token')
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    
     if request.method == 'POST':
         try:
             # Get form data
@@ -220,24 +229,24 @@ def index():
             paperboy_date = request.form['paperboy_date']
             selected_tag = request.form.get('tag')
             
-            # Add debug logging
             print(f"Form data: start={start_date}, end={end_date}, tag={selected_tag}")
             
-            api_key = session.get('access_token')
-            if not api_key:
-                flash('Please authenticate first', 'error')
-                return redirect(url_for('index'))
-
             # Set up parameters
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {api_key}"
+            total_params = {
+                'from': f"{start_date}T00:00:00Z",
+                'to': f"{end_date}T23:59:59Z"
             }
             
-            # Use Celery for the long-running task
-            task = count_subscribers.delay(api_key, start_date, end_date, paperboy_date, selected_tag)
-            results = task.get(timeout=25)  # Wait up to 25 seconds for results
+            tag_params = {**total_params}
+            if selected_tag:
+                tag_params['filter[tags]'] = selected_tag
+                
+            paperboy_params = {
+                'from': f"{paperboy_date}T00:00:00Z",
+                'to': f"{paperboy_date}T23:59:59Z"
+            }
             
+            results = get_subscriber_counts(headers, total_params, tag_params, paperboy_params)
             return render_template('index.html', 
                                 results=results,
                                 authenticated=True,
@@ -247,6 +256,11 @@ def index():
             print(f"Error in index route: {str(e)}")
             flash(f'An error occurred: {str(e)}', 'error')
             return redirect(url_for('index'))
+            
+    # GET request - just show the form
+    return render_template('index.html', 
+                         authenticated=True,
+                         tags=get_available_tags(api_key))
 
 def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
     """Get all subscriber counts with pagination"""
