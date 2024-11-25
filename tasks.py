@@ -26,17 +26,14 @@ def count_subscribers(headers, date):
     print(f"Starting count for {date}")
     endpoint = "https://api.convertkit.com/v4/subscribers"
     total_subscribers = 0
-    cursor = None
+    page = 1
     
     while True:
         params = {
             "created_before": f"{date}T23:59:59Z",
-            "per_page": 5000
+            "per_page": 5000,
+            "page": page
         }
-        
-        # Add cursor to params if we have one
-        if cursor:
-            params["cursor"] = cursor
             
         print(f"Making API request with params: {params}")
         response = requests.get(endpoint, headers=headers, params=params)
@@ -47,15 +44,15 @@ def count_subscribers(headers, date):
             
         data = response.json()
         subscribers = data.get('subscribers', [])
-        total_subscribers += len(subscribers)
         
-        print(f"Current count: {total_subscribers}")
-        
-        # Get the next cursor from the meta data
-        cursor = data.get('meta', {}).get('next_cursor')
-        if not cursor:
+        if not subscribers:  # If no more subscribers, break
             break
             
+        total_subscribers += len(subscribers)
+        print(f"Current count: {total_subscribers}")
+        
+        page += 1
+        
         # Optional: Add a small delay to avoid rate limits
         time.sleep(0.5)
     
