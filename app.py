@@ -212,40 +212,39 @@ def get_available_custom_fields(api_key):
 print("\n=== Registering first index route ===")
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    """Home page route"""
-    print(f"Session contents at index: {session}")
-    
     if request.method == 'POST':
-        # Store form data in session
-        session['start_date'] = request.form.get('start_date')
-        session['end_date'] = request.form.get('end_date')
-        session['paperboy_start_date'] = request.form.get('paperboy_start')
-        session['selected_tags'] = request.form.getlist('tags')
-        session['selected_fields'] = request.form.getlist('custom_fields')
-        
-        print(f"Form submitted with: {request.form}")
-        
-        # Format dates correctly
-        start_date = f"{session['start_date']}T00:00:00Z"
-        end_date = f"{session['end_date']}T23:59:59Z"
-        
-        api_key = session.get('access_token')
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        print(f"Using headers: {headers}")
-        
-        start_task = count_subscribers.delay(headers, start_date)
-        end_task = count_subscribers.delay(headers, end_date)
-        
-        session['counting_tasks'] = {
-            'start_date': start_task.id,
-            'end_date': end_task.id
-        }
-        
-        return render_template('loading.html')
+        try:
+            # Format dates correctly
+            start_date = f"{request.form['start_date']}T00:00:00Z"
+            end_date = f"{request.form['end_date']}T23:59:59Z"
+            
+            api_key = session.get('access_token')
+            if not api_key:
+                flash('Please authenticate first', 'error')
+                return redirect(url_for('index'))
+                
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            
+            print(f"Using headers: {headers}")
+            
+            # Start the counting tasks
+            start_task = count_subscribers.delay(headers, start_date)
+            end_task = count_subscribers.delay(headers, end_date)
+            
+            session['counting_tasks'] = {
+                'start_date': start_task.id,
+                'end_date': end_task.id
+            }
+            
+            return render_template('loading.html')
+            
+        except Exception as e:
+            print(f"Error starting count: {e}")
+            flash('An error occurred while starting the count', 'error')
+            return redirect(url_for('index'))
     
     # GET request handling (your existing code)
     authenticated = 'access_token' in session
@@ -881,32 +880,27 @@ def check_progress():
         
         # Check for failed tasks
         if task1.failed() or task2.failed():
-            error_msg = task1.result if task1.failed() else task2.result
+            error_msg = str(task1.result) if task1.failed() else str(task2.result)
             return jsonify({
-                'error': f'Task failed: {str(error_msg)}',
+                'error': f'Task failed: {error_msg}',
                 'complete': True
             })
         
-        complete = task1.ready() and task2.ready()
-        
-        if complete:
-            start_count = task1.get()
-            end_count = task2.get()
+        if task1.ready() and task2.ready():
+            start_count = task1.result or 0
+            end_count = task2.result or 0
             
-            # Validate the counts
-            if start_count == 0 and end_count == 0:
-                return jsonify({
-                    'error': 'Failed to get subscriber counts',
-                    'complete': True
-                })
+            try:
+                growth = ((end_count - start_count) / start_count * 100) if start_count > 0 else 0
+            except Exception as e:
+                print(f"Error calculating growth: {e}")
+                growth = 0
                 
-            growth = end_count - start_count
-            
             return jsonify({
                 'complete': True,
                 'start_count': start_count,
                 'end_count': end_count,
-                'growth': growth
+                'growth': round(growth, 2)
             })
         
         return jsonify({
@@ -918,6 +912,7 @@ def check_progress():
         })
         
     except Exception as e:
+        print(f"Error checking progress: {e}")
         return jsonify({
             'error': f'Error checking progress: {str(e)}',
             'complete': True

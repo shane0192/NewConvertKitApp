@@ -20,13 +20,13 @@ celery.conf.update(
     broker_connection_retry_on_startup=True
 )
 
-@celery.task
-def count_subscribers(headers, date):
+@celery.task(bind=True, max_retries=3)
+def count_subscribers(self, headers, date):
     """Count subscribers up to a given date"""
     print(f"Starting count for {date}")
     endpoint = "https://api.convertkit.com/v4/subscribers"
     
-    # Fix headers format to match the rest of the application
+    # Fix headers format
     if isinstance(headers, dict) and 'Authorization' in headers:
         api_headers = headers
     else:
@@ -36,76 +36,54 @@ def count_subscribers(headers, date):
         }
     
     print(f"Using headers: {api_headers}")
-    total_subscribers = 0
-    page = 1
     
     try:
-        # For end date, we want all subscribers before that date
-        # For start date, we want all subscribers after that date
-        is_start_date = 'T00:00:00Z' in date
-        
+        # Make initial request with just one result to get total count
         params = {
-            'per_page': 1000,  # API seems to limit to 1000
-            'page': page,
-            'sort_order': 'desc'  # Get newest first
+            'per_page': 1,
+            'page': 1,
+            'sort_order': 'desc'
         }
         
-        if is_start_date:
-            params['created_after'] = f"{date}"
+        # Add appropriate date filter
+        if 'T00:00:00Z' in date:
+            params['created_after'] = date
         else:
-            params['created_before'] = f"{date}"
+            params['created_before'] = date
             
         print(f"Making API request with params: {params}")
-        response = requests.get(endpoint, headers=api_headers, params=params)
+        
+        # Add timeout to prevent hanging
+        response = requests.get(
+            endpoint, 
+            headers=api_headers, 
+            params=params,
+            timeout=30  # 30 second timeout
+        )
         response.raise_for_status()
         
         data = response.json()
-        print(f"Response data: {data}")  # Debug print
         
-        # Check if we got the expected data structure
-        if not isinstance(data, dict):
-            print(f"Unexpected response format: {data}")
-            return 0
-            
-        # Get total from meta if available
+        # Get total count from metadata
         if 'meta' in data and 'total_count' in data['meta']:
             total_count = data['meta']['total_count']
             print(f"Got total count from meta: {total_count}")
             return total_count
             
-        # Otherwise count manually
-        subscribers = data.get('subscribers', [])
-        if not subscribers:
-            print("No subscribers found in response")
-            return 0
+        raise ValueError("No meta.total_count in API response")
             
-        total_subscribers = len(subscribers)
+    except requests.exceptions.Timeout:
+        print("Request timed out")
+        # Retry with exponential backoff
+        self.retry(countdown=2 ** self.request.retries)
         
-        # Keep paginating while we get full pages
-        while len(subscribers) == params['per_page']:
-            page += 1
-            params['page'] = page
-            
-            print(f"Making API request with params: {params}")
-            response = requests.get(endpoint, headers=api_headers, params=params)
-            response.raise_for_status()
-            
-            data = response.json()
-            subscribers = data.get('subscribers', [])
-            total_subscribers += len(subscribers)
-            print(f"Current count: {total_subscribers}")
-            
-            # Add a small delay to avoid rate limits
-            time.sleep(0.1)
-            
     except requests.exceptions.RequestException as e:
         print(f"Error making request: {e}")
         if hasattr(e.response, 'text'):
             print(f"Response text: {e.response.text}")
-        return 0
+        # Retry with exponential backoff
+        self.retry(countdown=2 ** self.request.retries)
+        
     except Exception as e:
         print(f"Unexpected error: {e}")
         return 0
-        
-    print(f"Final count for {date}: {total_subscribers}")
-    return total_subscribers
