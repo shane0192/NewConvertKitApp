@@ -98,18 +98,15 @@ def calculate_daily_counts(start_date, end_date, api_key, tag_id=None):
     return daily_counts
 
 def get_available_tags(api_key):
-    """Get available tags with error handling"""
+    """Get available tags from ConvertKit API"""
     try:
-        headers = {
-            "Authorization": f"Bearer {api_key}"
-        }
         response = requests.get(
-            "https://api.convertkit.com/v4/tags",
-            headers=headers,
-            timeout=5
+            'https://api.convertkit.com/v3/tags',
+            headers={'Authorization': f'Bearer {api_key}'}
         )
         response.raise_for_status()
-        return response.json().get('tags', [])
+        data = response.json()
+        return data.get('tags', [])
     except Exception as e:
         print(f"Error fetching tags: {str(e)}")
         return []
@@ -122,23 +119,13 @@ def index():
     if not api_key:
         return redirect(url_for('oauth_authorize'))
         
-    if request.method == 'GET':
-        # For GET requests, just show the form with tags
-        return render_template('index.html', 
-                            tags=get_available_tags(api_key))
-    
-    # Handle POST request
     try:
-        start_date = request.form.get('start')
-        end_date = request.form.get('end')
-        tag_id = request.form.get('tag')
-        
-        # ... rest of your POST handling code ...
-        
+        tags = get_available_tags(api_key)
+        return render_template('index.html', tags=tags)
     except Exception as e:
-        print(f"Error processing request: {str(e)}")
-        flash(f"Error: {str(e)}")
-        return redirect(url_for('index'))
+        print(f"Error in index route: {str(e)}")
+        flash("Error loading tags. Please try logging in again.")
+        return redirect(url_for('logout'))
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
