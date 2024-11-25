@@ -7,7 +7,6 @@ from requests_oauthlib import OAuth2Session
 import os
 from dotenv import load_dotenv
 import inspect
-from flask_session import Session
 
 print("=== Starting Flask App Setup ===")
 registered_routes = set()
@@ -25,10 +24,6 @@ PER_PAGE_PARAM = 1000  # Reduced from 5000 to prevent timeouts
 PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"
 REDIRECT_URI = 'https://convertkit-analytics-941b0603483f.herokuapp.com/oauth/callback'
 
-SESSION_DIR = '/tmp/flask_session'
-if not os.path.exists(SESSION_DIR):
-    os.makedirs(SESSION_DIR, mode=0o777)
-
 app = Flask(__name__)
 
 # ConvertKit OAuth settings
@@ -41,14 +36,10 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Simplify session config
 app.config.update(
-    SESSION_TYPE='filesystem',
-    SESSION_FILE_DIR=SESSION_DIR,
-    SECRET_KEY=os.environ.get('SECRET_KEY', 'your-secret-key'),
+    SECRET_KEY=os.environ.get('SECRET_KEY', '2cea766fa92b5c9eac492053de73dc47'),
     SESSION_PERMANENT=True,
     PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
 )
-
-Session(app)
 
 @app.context_processor
 def utility_processor():
