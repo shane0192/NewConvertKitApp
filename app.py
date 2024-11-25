@@ -112,11 +112,12 @@ def get_available_tags(api_key):
     """Get available tags from ConvertKit API"""
     try:
         response = requests.get(
-            'https://api.convertkit.com/v3/tags',
+            f'{BASE_URL}tags',  # Use BASE_URL which is v4
             headers={'Authorization': f'Bearer {api_key}'}
         )
         response.raise_for_status()
         data = response.json()
+        print(f"Tags response: {data}")  # Debug log
         return data.get('tags', [])
     except Exception as e:
         print(f"Error fetching tags: {str(e)}")
