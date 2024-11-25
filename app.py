@@ -224,7 +224,19 @@ def index():
         session['selected_fields'] = request.form.getlist('custom_fields')
         
         print(f"Form submitted with: {request.form}")
-        return redirect(url_for('show_results'))
+        
+        # Start background tasks
+        api_key = session['access_token']
+        start_task = count_subscribers.delay(api_key, session['start_date'])
+        end_task = count_subscribers.delay(api_key, session['end_date'])
+        
+        # Store task IDs in session
+        session['counting_tasks'] = {
+            'start_date': start_task.id,
+            'end_date': end_task.id
+        }
+        
+        return render_template('counting.html')  # Use existing counting template
     
     # GET request handling (your existing code)
     authenticated = 'access_token' in session

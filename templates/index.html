@@ -37,7 +37,7 @@
                 </div>
             {% else %}
                 <!-- Show the form when authenticated -->
-                <form id="dataForm" method="POST" style="display: block;">
+                <form id="dataForm" method="POST" action="{{ url_for('index') }}" style="display: block;">
                     <input type="hidden" id="validated_api_key" name="api_key">
                     <input type="hidden" id="account_name" name="account_name">
                     
