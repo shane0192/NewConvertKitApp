@@ -1,10 +1,19 @@
 from celery import Celery
 import requests
+import os
+from dotenv import load_dotenv
 
-# Your existing Celery setup
+load_dotenv()
+
+# Get Redis URL from environment variable
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# Configure Celery with the actual Redis URL
 celery = Celery('tasks')
-celery.conf.broker_url = 'your_redis_url'
-celery.conf.result_backend = 'your_redis_url'
+celery.conf.update(
+    broker_url=REDIS_URL,
+    result_backend=REDIS_URL
+)
 
 @celery.task
 def count_subscribers(headers, date):
