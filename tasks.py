@@ -25,36 +25,22 @@ def count_subscribers(headers, date):
     """Count subscribers up to a given date"""
     print(f"Starting count for {date}")
     endpoint = "https://api.convertkit.com/v4/subscribers"
-    total_subscribers = 0
-    page = 1
     
-    while True:
-        params = {
-            "created_before": f"{date}T23:59:59Z",
-            "per_page": 5000,
-            "page": page
-        }
-            
-        print(f"Making API request with params: {params}")
-        response = requests.get(endpoint, headers=headers, params=params)
-        
-        if not response.ok:
-            print(f"Error response: {response.text}")
-            break
-            
-        data = response.json()
-        subscribers = data.get('subscribers', [])
-        
-        if not subscribers:  # If no more subscribers, break
-            break
-            
-        total_subscribers += len(subscribers)
-        print(f"Current count: {total_subscribers}")
-        
-        page += 1
-        
-        # Optional: Add a small delay to avoid rate limits
-        time.sleep(0.5)
+    # Make a single request with a large page size and get total from metadata
+    params = {
+        "created_before": f"{date}T23:59:59Z",
+        "per_page": 1  # We only need the metadata
+    }
     
-    print(f"Final count for {date}: {total_subscribers}")
-    return total_subscribers 
+    print(f"Making initial API request for metadata")
+    response = requests.get(endpoint, headers=headers, params=params)
+    
+    if not response.ok:
+        print(f"Error response: {response.text}")
+        return 0
+        
+    data = response.json()
+    total_count = data.get('meta', {}).get('total_count', 0)
+    print(f"Total count from metadata: {total_count}")
+    
+    return total_count 
