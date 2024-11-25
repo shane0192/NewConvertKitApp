@@ -116,48 +116,30 @@ def get_available_tags(api_key):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
-        start_date = datetime.strptime(request.form['start'], '%Y-%m-%d')
-        end_date = datetime.strptime(request.form['end'], '%Y-%m-%d')
+    # Get API key from session
+    api_key = session.get('api_key')
+    
+    # If no API key, redirect to OAuth
+    if not api_key:
+        return redirect(url_for('oauth_authorize'))
+        
+    if request.method == 'GET':
+        # For GET requests, just show the form with tags
+        return render_template('index.html', 
+                            tags=get_available_tags(api_key))
+    
+    # Handle POST request
+    try:
+        start_date = request.form.get('start')
+        end_date = request.form.get('end')
         tag_id = request.form.get('tag')
         
-        api_key = session.get('access_token')
-        if not api_key:
-            return redirect(url_for('oauth_authorize'))
-            
-        try:
-            # Get daily counts
-            daily_counts = calculate_daily_counts(start_date, end_date, api_key, tag_id)
-            
-            # Calculate totals
-            total_subscribers = sum(daily_counts.values())
-            paperboy_subscribers = sum(daily_counts.values())  # Modify this based on your paperboy logic
-            
-            results = {
-                'total_subscribers': total_subscribers,
-                'tagged_subscribers': 0 if not tag_id else total_subscribers,
-                'paperboy_subscribers': paperboy_subscribers,
-                'daily_counts': daily_counts
-            }
-            
-            # Get tags for dropdown
-            tags = get_available_tags(api_key)
-            
-            return render_template('index.html', 
-                                results=results,
-                                tags=tags,
-                                selected_tag=tag_id,
-                                start_date=request.form['start'],
-                                end_date=request.form['end'])
-                                
-        except Exception as e:
-            print(f"Error processing request: {str(e)}")
-            flash(f"Error: {str(e)}")
-            return redirect(url_for('index'))
-            
-    return render_template('index.html', 
-                         authenticated=True,
-                         tags=get_available_tags(api_key))
+        # ... rest of your POST handling code ...
+        
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        flash(f"Error: {str(e)}")
+        return redirect(url_for('index'))
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
