@@ -214,112 +214,113 @@ print("\n=== Registering first index route ===")
 def index():
     if request.method == 'POST':
         try:
-            # Format dates correctly
+            # Get form data
             start_date = f"{request.form['start_date']}T00:00:00Z"
             end_date = f"{request.form['end_date']}T23:59:59Z"
+            paperboy_date = f"{request.form['paperboy_date']}T00:00:00Z"
+            selected_tag = request.form.get('tag')
             
             api_key = session.get('access_token')
             if not api_key:
                 flash('Please authenticate first', 'error')
                 return redirect(url_for('index'))
-                
+
             headers = {
                 "Accept": "application/json",
                 "Authorization": f"Bearer {api_key}"
             }
-            
-            # Start the counting tasks
-            start_task = count_subscribers.delay(headers, start_date)
-            end_task = count_subscribers.delay(headers, end_date)
-            
-            session['counting_tasks'] = {
-                'start_date': start_task.id,
-                'end_date': end_task.id
+
+            # Get total subscribers for date range
+            total_params = {
+                'filter[created_at][from]': start_date,
+                'filter[created_at][to]': end_date,
             }
             
-            # Return a redirect instead of rendering template directly
-            return redirect(url_for('loading'))
+            # Get tagged subscribers
+            tag_params = {
+                **total_params,  # Include date filters
+                'filter[tags]': selected_tag
+            }
             
+            # Get paperboy subscribers
+            paperboy_params = {
+                'filter[created_at][from]': paperboy_date,
+                'filter[created_at][to]': end_date,
+            }
+
+            # Make API calls
+            results = get_subscriber_counts(headers, total_params, tag_params, paperboy_params)
+            
+            return render_template('index.html', 
+                                authenticated=True,
+                                results=results)
+
         except Exception as e:
-            print(f"Error starting count: {str(e)}")
-            flash('An error occurred while starting the count', 'error')
+            print(f"Error: {str(e)}")
+            flash('Error fetching subscriber data', 'error')
             return redirect(url_for('index'))
 
-@app.route('/loading')
-def loading():
-    return render_template('loading.html')
-
-@app.route('/results')
-def results():
-    # Get the counts from session
-    start_count = session.get('start_count', 0)
-    end_count = session.get('end_count', 0)
-    total_subscribers = end_count - start_count
-
-    # Get dates
-    start_date = session.get('start_date')
-    end_date = session.get('end_date')
-    paperboy_start = session.get('paperboy_start')
-
-    # Calculate source counts and percentages
-    source_counts = {
-        'Creator Network': session.get('creator_network_count', 0),
-        'Facebook Ads': session.get('facebook_ads_count', 0),
-        'Sparkloop': session.get('sparkloop_count', 0)
-    }
+    # GET request - show form
+    if session.get('access_token'):
+        # Get available tags for dropdown
+        try:
+            tags = get_available_tags(session['access_token'])
+            return render_template('index.html', authenticated=True, tags=tags)
+        except Exception as e:
+            print(f"Error fetching tags: {e}")
+            flash('Error fetching tags', 'error')
+            return render_template('index.html', authenticated=True, tags=[])
     
-    # Calculate organic (total minus known sources)
-    known_sources_total = sum(source_counts.values())
-    source_counts['Organic'] = total_subscribers - known_sources_total
+    return render_template('index.html', authenticated=False)
 
-    # Calculate percentages
-    percentages = {
-        source: round((count / total_subscribers * 100), 1) if total_subscribers > 0 else 0
-        for source, count in source_counts.items()
-    }
-
-    # Paperboy calculations
-    paperboy_total = session.get('paperboy_total', 0)
-    paperboy_percentage = round((paperboy_total / total_subscribers * 100), 1) if total_subscribers > 0 else 0
+def get_subscriber_counts(headers, total_params, tag_params, paperboy_params):
+    """Get all subscriber counts with proper error handling"""
+    base_url = "https://api.convertkit.com/v4/subscribers"
+    results = {}
     
-    paperboy_sources = {
-        'Facebook Ads': session.get('paperboy_facebook_count', 0),
-        # Add other Paperboy sources as needed
-    }
-    
-    paperboy_source_percentages = {
-        source: round((count / total_subscribers * 100), 1) if total_subscribers > 0 else 0
-        for source, count in paperboy_sources.items()
-    }
+    try:
+        # Get total subscribers
+        total_response = requests.get(base_url, headers=headers, params=total_params)
+        total_response.raise_for_status()
+        results['total_subscribers'] = len(total_response.json()['subscribers'])
+        
+        # Get tagged subscribers
+        if tag_params['filter[tags]']:
+            tag_response = requests.get(base_url, headers=headers, params=tag_params)
+            tag_response.raise_for_status()
+            results['tagged_subscribers'] = len(tag_response.json()['subscribers'])
+        else:
+            results['tagged_subscribers'] = 0
+            
+        # Get paperboy subscribers
+        paperboy_response = requests.get(base_url, headers=headers, params=paperboy_params)
+        paperboy_response.raise_for_status()
+        results['paperboy_subscribers'] = len(paperboy_response.json()['subscribers'])
+        
+        # Calculate growth percentages
+        # ... (we'll add this in the next code block)
+        
+        return results
+        
+    except requests.exceptions.RequestException as e:
+        print(f"API Error: {str(e)}")
+        if hasattr(e.response, 'text'):
+            print(f"Response: {e.response.text}")
+        raise Exception("Error fetching subscriber data")
 
-    return render_template('results.html',
-                         total_subscribers=total_subscribers,
-                         start_date=start_date,
-                         end_date=end_date,
-                         source_counts=source_counts,
-                         percentages=percentages,
-                         paperboy_start=paperboy_start,
-                         paperboy_total=paperboy_total,
-                         paperboy_percentage=paperboy_percentage,
-                         paperboy_sources=paperboy_sources,
-                         paperboy_source_percentages=paperboy_source_percentages)
-
-# Function to fetch available tags (for dropdown)
-def get_available_tags():
-    endpoint = f"{BASE_URL}tags"
-    
+def get_available_tags(api_key):
+    """Fetch available tags for the dropdown"""
     headers = {
         "Accept": "application/json",
-        "X-Kit-Api-Key": API_KEY
+        "Authorization": f"Bearer {api_key}"
     }
     
-    response = requests.get(endpoint, headers=headers)
-    
-    if response.status_code == 200:
-        data = response.json()
-        return [tag['name'] for tag in data['tags']]
-    else:
-        print(f"Failed to fetch tags. Status Code: {response.status_code}")
+    try:
+        response = requests.get("https://api.convertkit.com/v4/tags", headers=headers)
+        response.raise_for_status()
+        return response.json()['tags']
+    except Exception as e:
+        print(f"Error fetching tags: {e}")
         return []
 
 def get_custom_field_id(field_key, api_key):
