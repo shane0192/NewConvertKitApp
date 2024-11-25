@@ -227,7 +227,12 @@ def index():
         
         # Start background tasks with proper authorization
         api_key = session.get('access_token')
-        headers = {"Authorization": f"Bearer {api_key}"}  # Create proper headers
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        print(f"Using headers: {headers}")
         
         start_task = count_subscribers.delay(headers, session['start_date'])
         end_task = count_subscribers.delay(headers, session['end_date'])
@@ -259,50 +264,59 @@ def index():
                          custom_fields=custom_fields)
 
 @app.route('/results')
-def show_results():
-    """Show analysis results"""
-    if 'access_token' not in session:
-        return redirect(url_for('index'))
-    
-    # Get data from session
-    api_key = session['access_token']
+def results():
+    # Get the counts from session
+    start_count = session.get('start_count', 0)
+    end_count = session.get('end_count', 0)
+    total_subscribers = end_count - start_count
+
+    # Get dates
     start_date = session.get('start_date')
     end_date = session.get('end_date')
-    paperboy_start = session.get('paperboy_start_date')
-    selected_tags = session.get('selected_tags', [])
-    selected_fields = session.get('selected_fields', [])
+    paperboy_start = session.get('paperboy_start')
 
-    # Initialize empty results
-    tag_counts = {}
-    field_counts = {}
-    total_subscribers = 0
-    paperboy_subscribers = 0
+    # Calculate source counts and percentages
+    source_counts = {
+        'Creator Network': session.get('creator_network_count', 0),
+        'Facebook Ads': session.get('facebook_ads_count', 0),
+        'Sparkloop': session.get('sparkloop_count', 0)
+    }
     
-    try:
-        # Get subscriber counts using your existing functions
-        total_subscribers = get_subscribers_last_x_days(start_date, end_date, api_key)
-        paperboy_subscribers = get_subscribers_since_paperboy(paperboy_start, api_key)
-        
-        # Get tag and field counts
-        for tag in selected_tags:
-            tag_counts[tag] = get_subscribers_by_tag(tag, api_key)
-        
-        for field in selected_fields:
-            field_counts[field] = get_subscribers_by_field(field, api_key)
-            
-    except Exception as e:
-        print(f"Error processing data: {e}")
-        flash("Error processing data. Please try again.")
-        return redirect(url_for('index'))
+    # Calculate organic (total minus known sources)
+    known_sources_total = sum(source_counts.values())
+    source_counts['Organic'] = total_subscribers - known_sources_total
+
+    # Calculate percentages
+    percentages = {
+        source: round((count / total_subscribers * 100), 1) if total_subscribers > 0 else 0
+        for source, count in source_counts.items()
+    }
+
+    # Paperboy calculations
+    paperboy_total = session.get('paperboy_total', 0)
+    paperboy_percentage = round((paperboy_total / total_subscribers * 100), 1) if total_subscribers > 0 else 0
     
+    paperboy_sources = {
+        'Facebook Ads': session.get('paperboy_facebook_count', 0),
+        # Add other Paperboy sources as needed
+    }
+    
+    paperboy_source_percentages = {
+        source: round((count / total_subscribers * 100), 1) if total_subscribers > 0 else 0
+        for source, count in paperboy_sources.items()
+    }
+
     return render_template('results.html',
+                         total_subscribers=total_subscribers,
                          start_date=start_date,
                          end_date=end_date,
+                         source_counts=source_counts,
+                         percentages=percentages,
                          paperboy_start=paperboy_start,
-                         tag_counts=tag_counts,
-                         field_counts=field_counts,
-                         total_subscribers=total_subscribers,
-                         paperboy_subscribers=paperboy_subscribers)
+                         paperboy_total=paperboy_total,
+                         paperboy_percentage=paperboy_percentage,
+                         paperboy_sources=paperboy_sources,
+                         paperboy_source_percentages=paperboy_source_percentages)
 
 # Function to fetch available tags (for dropdown)
 def get_available_tags():
@@ -858,27 +872,50 @@ def check_progress():
         return jsonify({'error': 'No counting in progress'})
         
     tasks = session['counting_tasks']
-    task1 = count_subscribers.AsyncResult(tasks['start_date'])
-    task2 = count_subscribers.AsyncResult(tasks['end_date'])
-    
-    complete = task1.ready() and task2.ready()
-    
-    if complete:
-        start_count = task1.get()
-        end_count = task2.get()
-        growth = end_count - start_count
+    try:
+        task1 = count_subscribers.AsyncResult(tasks['start_date'])
+        task2 = count_subscribers.AsyncResult(tasks['end_date'])
+        
+        # Check for failed tasks
+        if task1.failed() or task2.failed():
+            error_msg = task1.result if task1.failed() else task2.result
+            return jsonify({
+                'error': f'Task failed: {str(error_msg)}',
+                'complete': True
+            })
+        
+        complete = task1.ready() and task2.ready()
+        
+        if complete:
+            start_count = task1.get()
+            end_count = task2.get()
+            
+            # Validate the counts
+            if start_count == 0 and end_count == 0:
+                return jsonify({
+                    'error': 'Failed to get subscriber counts',
+                    'complete': True
+                })
+                
+            growth = end_count - start_count
+            
+            return jsonify({
+                'complete': True,
+                'start_count': start_count,
+                'end_count': end_count,
+                'growth': growth
+            })
         
         return jsonify({
-            'complete': True,
-            'start_count': start_count,
-            'end_count': end_count,
-            'growth': growth
+            'complete': False,
+            'status': {
+                'start_date': task1.status,
+                'end_date': task2.status
+            }
         })
-    
-    return jsonify({
-        'complete': False,
-        'status': {
-            'start_date': task1.status,
-            'end_date': task2.status
-        }
-    })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Error checking progress: {str(e)}',
+            'complete': True
+        })

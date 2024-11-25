@@ -25,20 +25,30 @@ def count_subscribers(headers, date):
     """Count subscribers up to a given date"""
     print(f"Starting count for {date}")
     endpoint = "https://api.convertkit.com/v4/subscribers"
+    
+    # Fix headers format to match the rest of the application
+    if isinstance(headers, dict) and 'Authorization' in headers:
+        api_headers = headers
+    else:
+        api_headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {headers}" if isinstance(headers, str) else None
+        }
+    
+    print(f"Using headers: {api_headers}")
     total_subscribers = 0
     page = 1
     
     try:
-        # First request to check response format
         params = {
             "created_before": f"{date}T23:59:59Z",
             "per_page": 5000,
             "page": page,
             "sort_order": "desc"  # Get newest first
         }
-            
+        
         print(f"Making API request with params: {params}")
-        response = requests.get(endpoint, headers=headers, params=params)
+        response = requests.get(endpoint, headers=api_headers, params=params)
         response.raise_for_status()  # Raise exception for bad status codes
             
         data = response.json()
@@ -62,7 +72,7 @@ def count_subscribers(headers, date):
             params['page'] = page
             
             print(f"Making API request with params: {params}")
-            response = requests.get(endpoint, headers=headers, params=params)
+            response = requests.get(endpoint, headers=api_headers, params=params)
             response.raise_for_status()
             
             data = response.json()
