@@ -25,8 +25,11 @@ PER_PAGE_PARAM = 1000  # Reduced from 5000 to prevent timeouts
 PAPERBOY_START_DATE = "2024-10-29T00:00:00Z"
 REDIRECT_URI = 'https://convertkit-analytics-941b0603483f.herokuapp.com/oauth/callback'
 
+SESSION_DIR = '/tmp/flask_session'
+if not os.path.exists(SESSION_DIR):
+    os.makedirs(SESSION_DIR, mode=0o777)
+
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
 
 # ConvertKit OAuth settings
 CLIENT_ID = os.getenv('CONVERTKIT_CLIENT_ID')
@@ -37,10 +40,13 @@ TOKEN_URL = 'https://api.convertkit.com/oauth/token'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Simplify session config
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
-app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600
+app.config.update(
+    SESSION_TYPE='filesystem',
+    SESSION_FILE_DIR=SESSION_DIR,
+    SECRET_KEY=os.environ.get('SECRET_KEY', 'your-secret-key'),
+    SESSION_PERMANENT=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
+)
 
 Session(app)
 
@@ -203,6 +209,20 @@ def oauth_callback():
 def logout():
     session.clear()
     return redirect(url_for('index'))
+
+@app.before_request
+def before_request():
+    print(f"=== Before Request ===")
+    print(f"Path: {request.path}")
+    print(f"Session contents: {dict(session)}")
+
+@app.after_request
+def after_request(response):
+    print(f"=== After Request ===")
+    print(f"Path: {request.path}")
+    print(f"Session contents: {dict(session)}")
+    print(f"Response status: {response.status_code}")
+    return response
 
 if __name__ == '__main__':
     app.run(port=5002, debug=True)
