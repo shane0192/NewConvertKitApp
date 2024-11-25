@@ -97,6 +97,23 @@ def calculate_daily_counts(start_date, end_date, api_key, tag_id=None):
         
     return daily_counts
 
+def get_available_tags(api_key):
+    """Get available tags with error handling"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
+        response = requests.get(
+            "https://api.convertkit.com/v4/tags",
+            headers=headers,
+            timeout=5
+        )
+        response.raise_for_status()
+        return response.json().get('tags', [])
+    except Exception as e:
+        print(f"Error fetching tags: {str(e)}")
+        return []
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
