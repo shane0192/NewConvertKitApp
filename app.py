@@ -7,6 +7,8 @@ from requests_oauthlib import OAuth2Session
 import os
 from dotenv import load_dotenv
 import inspect
+from flask_session import Session
+import redis
 
 print("=== Starting Flask App Setup ===")
 registered_routes = set()
@@ -34,6 +36,15 @@ AUTHORIZATION_BASE_URL = 'https://app.convertkit.com/oauth/authorize'
 TOKEN_URL = 'https://api.convertkit.com/oauth/token'
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+# Configure Redis session
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_REDIS'] = redis.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379'))
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
+app.config['SESSION_PERMANENT'] = True  # Make sessions permanent
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session lifetime in seconds
+
+Session(app)
 
 @app.context_processor
 def utility_processor():
@@ -115,17 +126,19 @@ def get_available_tags(api_key):
 def index():
     api_key = session.get('api_key')
     print(f"Index route - API key present: {api_key is not None}")
+    print(f"Session contents: {dict(session)}")  # Debug log
     
     if not api_key:
+        print("No API key found, redirecting to OAuth")  # Debug log
         return redirect(url_for('oauth_authorize'))
         
     try:
         tags = get_available_tags(api_key)
         return render_template('index.html', tags=tags)
     except Exception as e:
-        print(f"Error in index route: {str(e)}")
-        flash("Error loading tags. Please try logging in again.")
-        return redirect(url_for('logout'))
+        print(f"Error in index route: {str(e)}")  # Debug log
+        flash(str(e))
+        return redirect(url_for('oauth_authorize'))
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
@@ -160,7 +173,6 @@ def oauth_callback():
     print("Received OAuth callback")
     try:
         code = request.args.get('code')
-        state = request.args.get('state')
         
         # Exchange code for access token
         token_response = requests.post(
@@ -175,10 +187,11 @@ def oauth_callback():
         )
         
         token_data = token_response.json()
+        print(f"Token response: {token_data}")  # Debug log
         
         # Store the access token in session
         session['api_key'] = token_data.get('access_token')
-        print(f"Stored API key in session: {session.get('api_key') is not None}")
+        print(f"Stored API key in session: {session.get('api_key')}")  # Debug log
         
         return redirect(url_for('index'))
         
