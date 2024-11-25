@@ -39,9 +39,10 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Configure Redis session
 app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = redis.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379'))
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+app.config['SESSION_REDIS'] = redis.from_url(redis_url)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
-app.config['SESSION_PERMANENT'] = True  # Make sessions permanent
+app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session lifetime in seconds
 
 Session(app)
