@@ -8,7 +8,6 @@ import os
 from dotenv import load_dotenv
 import inspect
 from flask_session import Session
-import tempfile
 
 print("=== Starting Flask App Setup ===")
 registered_routes = set()
@@ -37,12 +36,11 @@ TOKEN_URL = 'https://api.convertkit.com/oauth/token'
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-# Configure Redis session
+# Simplify session config
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = tempfile.gettempdir()
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session lifetime in seconds
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600
 
 Session(app)
 
@@ -183,7 +181,7 @@ def oauth_callback():
                 'code': code,
                 'client_id': os.environ['CONVERTKIT_CLIENT_ID'],
                 'client_secret': os.environ['CONVERTKIT_CLIENT_SECRET'],
-                'redirect_uri': os.environ['OAUTH_REDIRECT_URI']
+                'redirect_uri': REDIRECT_URI
             }
         )
         
