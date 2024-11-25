@@ -40,34 +40,49 @@ def count_subscribers(headers, date):
     page = 1
     
     try:
+        # For end date, we want all subscribers before that date
+        # For start date, we want all subscribers after that date
+        is_start_date = 'T00:00:00Z' in date
+        
         params = {
-            "created_before": f"{date}T23:59:59Z",
-            "per_page": 5000,
-            "page": page,
-            "sort_order": "desc"  # Get newest first
+            'per_page': 1000,  # API seems to limit to 1000
+            'page': page,
+            'sort_order': 'desc'  # Get newest first
         }
         
+        if is_start_date:
+            params['created_after'] = f"{date}"
+        else:
+            params['created_before'] = f"{date}"
+            
         print(f"Making API request with params: {params}")
         response = requests.get(endpoint, headers=api_headers, params=params)
-        response.raise_for_status()  # Raise exception for bad status codes
-            
+        response.raise_for_status()
+        
         data = response.json()
+        print(f"Response data: {data}")  # Debug print
         
         # Check if we got the expected data structure
-        if not isinstance(data, dict) or 'subscribers' not in data:
+        if not isinstance(data, dict):
             print(f"Unexpected response format: {data}")
             return 0
             
+        # Get total from meta if available
+        if 'meta' in data and 'total_count' in data['meta']:
+            total_count = data['meta']['total_count']
+            print(f"Got total count from meta: {total_count}")
+            return total_count
+            
+        # Otherwise count manually
         subscribers = data.get('subscribers', [])
+        if not subscribers:
+            print("No subscribers found in response")
+            return 0
+            
         total_subscribers = len(subscribers)
         
-        # If we got less than per_page results, we're done
-        if len(subscribers) < 5000:
-            print(f"Final count for {date}: {total_subscribers}")
-            return total_subscribers
-            
-        # Otherwise, keep paginating
-        while True:
+        # Keep paginating while we get full pages
+        while len(subscribers) == params['per_page']:
             page += 1
             params['page'] = page
             
@@ -77,18 +92,16 @@ def count_subscribers(headers, date):
             
             data = response.json()
             subscribers = data.get('subscribers', [])
-            
-            if not subscribers:  # No more results
-                break
-                
             total_subscribers += len(subscribers)
             print(f"Current count: {total_subscribers}")
             
-            # Optional: Add a small delay to avoid rate limits
-            time.sleep(0.2)
+            # Add a small delay to avoid rate limits
+            time.sleep(0.1)
             
     except requests.exceptions.RequestException as e:
         print(f"Error making request: {e}")
+        if hasattr(e.response, 'text'):
+            print(f"Response text: {e.response.text}")
         return 0
     except Exception as e:
         print(f"Unexpected error: {e}")

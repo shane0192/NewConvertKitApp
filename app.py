@@ -225,7 +225,10 @@ def index():
         
         print(f"Form submitted with: {request.form}")
         
-        # Start background tasks with proper authorization
+        # Format dates correctly
+        start_date = f"{session['start_date']}T00:00:00Z"
+        end_date = f"{session['end_date']}T23:59:59Z"
+        
         api_key = session.get('access_token')
         headers = {
             "Accept": "application/json",
@@ -234,15 +237,15 @@ def index():
         
         print(f"Using headers: {headers}")
         
-        start_task = count_subscribers.delay(headers, session['start_date'])
-        end_task = count_subscribers.delay(headers, session['end_date'])
+        start_task = count_subscribers.delay(headers, start_date)
+        end_task = count_subscribers.delay(headers, end_date)
         
         session['counting_tasks'] = {
             'start_date': start_task.id,
             'end_date': end_task.id
         }
         
-        return render_template('counting.html')
+        return render_template('loading.html')
     
     # GET request handling (your existing code)
     authenticated = 'access_token' in session
