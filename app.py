@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 import inspect
 from flask_session import Session
-import redis
+import tempfile
 
 print("=== Starting Flask App Setup ===")
 registered_routes = set()
@@ -38,9 +38,8 @@ TOKEN_URL = 'https://api.convertkit.com/oauth/token'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Configure Redis session
-app.config['SESSION_TYPE'] = 'redis'
-redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-app.config['SESSION_REDIS'] = redis.from_url(redis_url)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = tempfile.gettempdir()
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session lifetime in seconds
