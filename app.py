@@ -351,53 +351,78 @@ def generate_report(api_key, facebook_tag, creator_tag, sparkloop_tag, start_dat
 @app.route('/', methods=['GET', 'POST'])
 @token_required
 def index():
-    # Get session data
     api_key = session.get('api_key')
     client_name = session.get('selected_client')
     
     if not api_key or not client_name:
         return redirect(url_for('login'))
     
-    if request.method == 'GET':
-        # Get current date for default date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
+    # Set default dates
+    today = datetime.now()
+    start_date = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+    end_date = today.strftime('%Y-%m-%d')
+    
+    try:
+        # Get tags data
+        tags_data = fetch_tags(api_key)
+        tag_options = tags_data.get('all_tags', [])
+        suggested_tags = tags_data.get('suggested', {})
         
-        # Get tags and suggested tags
-        tags_data = fetch_tags()  # fetch_tags now returns a dictionary directly
+        if request.method == 'POST':
+            if 'paperboy_start_date' in request.form:
+                # Handle client data form
+                paperboy_start_date = request.form.get('paperboy_start_date')
+                initial_subscriber_count = request.form.get('initial_subscriber_count')
+                
+                if paperboy_start_date and initial_subscriber_count:
+                    try:
+                        initial_subscriber_count = int(initial_subscriber_count)
+                        CLIENT_DATA[client_name] = {
+                            'paperboy_start_date': paperboy_start_date,
+                            'initial_subscriber_count': initial_subscriber_count
+                        }
+                        save_client_data()
+                        flash('Client data saved successfully!', 'success')
+                    except ValueError:
+                        flash('Please enter a valid number for initial subscriber count', 'error')
+                else:
+                    flash('Please fill in all required fields', 'error')
+                
+                return redirect(url_for('index'))
+            else:
+                # Handle report generation form
+                facebook_tag = request.form.get('facebook_tag')
+                creator_tag = request.form.get('creator_tag')
+                sparkloop_tag = request.form.get('sparkloop_tag')
+                start_date = request.form.get('start_date')
+                end_date = request.form.get('end_date')
+                
+                results = generate_report(api_key, facebook_tag, creator_tag, sparkloop_tag, start_date, end_date)
+                
+                return render_template('index.html',
+                                    client_name=client_name,
+                                    tags=tag_options,
+                                    suggested_tags=suggested_tags,
+                                    default_start_date=start_date,
+                                    default_end_date=end_date,
+                                    selected_client=client_name,
+                                    client_data=CLIENT_DATA.get(client_name),
+                                    results=results)
         
+        # GET request
         return render_template('index.html',
-            client_name=client_name,
-            tags=tags_data.get('tags', []),
-            suggested_tags=tags_data.get('suggested', {}),
-            default_start_date=start_date.strftime('%Y-%m-%d'),
-            default_end_date=end_date.strftime('%Y-%m-%d'),
-            selected_client=client_name,
-            client_data=CLIENT_DATA.get(client_name))
-            
-    else:  # POST request
-        # Your existing POST handling code here
-        facebook_tag = request.form.get('facebook_tag')
-        creator_tag = request.form.get('creator_tag')
-        sparkloop_tag = request.form.get('sparkloop_tag')
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        
-        # Generate report
-        results = generate_report(api_key, facebook_tag, creator_tag, sparkloop_tag, start_date, end_date)
-        
-        # Get tags for template rendering
-        tags_data = fetch_tags()
-        
-        return render_template('index.html',
-            client_name=client_name,
-            tags=tags_data.get('tags', []),
-            suggested_tags=tags_data.get('suggested', {}),
-            default_start_date=start_date,
-            default_end_date=end_date,
-            selected_client=client_name,
-            client_data=CLIENT_DATA.get(client_name),
-            results=results)
+                            client_name=client_name,
+                            tags=tag_options,
+                            suggested_tags=suggested_tags,
+                            default_start_date=start_date,
+                            default_end_date=end_date,
+                            selected_client=client_name,
+                            client_data=CLIENT_DATA.get(client_name))
+                            
+    except Exception as e:
+        print(f"Error in index route: {str(e)}")
+        flash('An error occurred while loading the page. Please try again.', 'error')
+        return redirect(url_for('login'))
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
@@ -531,11 +556,21 @@ check_environment()
 def save_client_data():
     """Save client data to a JSON file"""
     try:
+        print(f"Attempting to save client data: {CLIENT_DATA}")
         with open('client_data.json', 'w') as f:
             json.dump(CLIENT_DATA, f)
         print("Client data saved successfully")
+        
+        # Verify the save by reading back
+        with open('client_data.json', 'r') as f:
+            saved_data = json.load(f)
+        print(f"Verified saved data: {saved_data}")
+        
+        return True
     except Exception as e:
         print(f"Error saving client data: {str(e)}")
+        traceback.print_exc()  # This will print the full error traceback
+        return False
 
 def find_closest_tag(tags, tag_type):
     """
