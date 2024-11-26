@@ -2,95 +2,181 @@
 <html>
 <head>
     <title>ConvertKit Analytics</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
-    <style>
-        .container { max-width: 800px; }
-        .card { margin-bottom: 1rem; }
-    </style>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
     <div class="container mt-5">
-        <h1 class="mb-4">ConvertKit Analytics</h1>
-        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>ConvertKit Analytics</h1>
+            {% if 'api_key' in session %}
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Logout</a>
+            {% endif %}
+        </div>
+
         {% if 'api_key' not in session %}
             <div class="text-center">
-                <h2 class="mb-3">Connect Your Account</h2>
                 <a href="{{ url_for('oauth_authorize') }}" class="btn btn-primary btn-lg">
                     Connect with ConvertKit
                 </a>
             </div>
         {% else %}
-            <div class="mb-3 d-flex justify-content-end">
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Logout</a>
-            </div>
-
             <form method="POST" class="mb-4">
                 <div class="row mb-3">
                     <div class="col">
-                        <label>Start Date</label>
-                        <input type="date" name="start_date" class="form-control" required>
+                        <label for="start_date">Start Date:</label>
+                        <input type="date" name="start_date" class="form-control" value="{{ default_start_date }}" required>
                     </div>
                     <div class="col">
-                        <label>End Date</label>
-                        <input type="date" name="end_date" class="form-control" required>
+                        <label for="end_date">End Date:</label>
+                        <input type="date" name="end_date" class="form-control" value="{{ default_end_date }}" required>
+                    </div>
+                    <div class="col">
+                        <label for="current_total">Current Total Subscribers:</label>
+                        <input type="number" name="current_total" class="form-control" required>
                     </div>
                 </div>
+
                 <div class="row mb-3">
-                    <div class="col">
-                        <label>Paperboy Start Date</label>
-                        <input type="date" name="paperboy_date" class="form-control" required>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="facebook_tag">Facebook Ads Tag:</label>
+                            <select name="facebook_tag" class="form-select">
+                                <option value="">Select tag...</option>
+                                {% if tags %}
+                                    {% for tag in tags %}
+                                        <option value="{{ tag.id }}" {% if tag.id == facebook_tag_id %}selected{% endif %}>
+                                            {{ tag.name }}
+                                        </option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                        </div>
                     </div>
-                    <div class="col">
-                        <label>Tag</label>
-                        <select name="tag" class="form-control">
-                            <option value="">Select a tag</option>
-                            {% for tag in tags %}
-                                <option value="{{ tag.id }}">{{ tag.name }}</option>
-                            {% endfor %}
-                        </select>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="creator_tag">Creator Network Tag:</label>
+                            <select name="creator_tag" class="form-select">
+                                <option value="">Select tag...</option>
+                                {% if tags %}
+                                    {% for tag in tags %}
+                                        <option value="{{ tag.id }}" {% if tag.id == creator_tag_id %}selected{% endif %}>
+                                            {{ tag.name }}
+                                        </option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="sparkloop_tag">Sparkloop Tag:</label>
+                            <select name="sparkloop_tag" class="form-select">
+                                <option value="">Select tag...</option>
+                                {% if tags %}
+                                    {% for tag in tags %}
+                                        <option value="{{ tag.id }}" {% if tag.id == sparkloop_tag_id %}selected{% endif %}>
+                                            {{ tag.name }}
+                                        </option>
+                                    {% endfor %}
+                                {% endif %}
+                            </select>
+                        </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Get Subscriber Data</button>
+
+                <button type="submit" class="btn btn-primary">Generate Report</button>
             </form>
 
             {% if results %}
-                <div class="results mt-4">
-                    <h3>Results</h3>
+            <div class="row mt-4">
+                <div class="col-md-6">
                     <div class="card">
                         <div class="card-body">
-                            <h5>Total Subscribers</h5>
-                            <p class="mb-0">Count: {{ results.total_subscribers }}</p>
-                        </div>
-                    </div>
-                    
-                    {% if results.tagged_subscribers > 0 %}
-                        <div class="card">
-                            <div class="card-body">
-                                <h5>Tagged Subscribers</h5>
-                                <p class="mb-0">Count: {{ results.tagged_subscribers }}</p>
-                            </div>
-                        </div>
-                    {% endif %}
-                    
-                    <div class="card">
-                        <div class="card-body">
-                            <h5>Paperboy Subscribers</h5>
-                            <p class="mb-0">Count: {{ results.paperboy_subscribers }}</p>
+                            <h3 class="card-title">Recent Data</h3>
+                            <p class="text-muted">{{ results.start_date }} to {{ results.end_date }}</p>
+                            <ul class="list-group">
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Total Subscribers
+                                    <span class="badge bg-primary rounded-pill">{{ results.total_subscribers }}</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Facebook Ads Subscribers
+                                    <span class="badge bg-primary rounded-pill">{{ results.facebook_subscribers }}</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Creator Network Subscribers
+                                    <span class="badge bg-primary rounded-pill">{{ results.creator_subscribers }}</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Sparkloop Subscribers
+                                    <span class="badge bg-primary rounded-pill">{{ results.sparkloop_subscribers }}</span>
+                                </li>
+                            </ul>
                         </div>
                     </div>
                 </div>
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h3>Growth Metrics</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col">
+                                    <h4>Total Growth Since Paperboy</h4>
+                                    <p class="h2">{{ results.total_growth if results else '0' }}</p>
+                                    <small class="text-muted">Since {{ results.paperboy_start_date if results else '' }}</small>
+                                </div>
+                                <div class="col">
+                                    <h4>Growth Rate</h4>
+                                    <p class="h2">{{ "%.1f"|format(results.growth_rate) if results else '0' }}%</p>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col">
+                                    <h4>Daily Average Before Paperboy</h4>
+                                    <p class="h2">{{ results.daily_average_before if results else '0' }}</p>
+                                    <small class="text-muted">{{ results.before_period if results else 'Based on 60 days before' }}</small>
+                                </div>
+                                <div class="col">
+                                    <h4>Daily Average After Paperboy</h4>
+                                    <p class="h2">{{ results.daily_average_after if results else '0' }}</p>
+                                    <small class="text-muted">{{ results.after_period if results else '60 days after' }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if selected_client and not client_data %}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h3>Initial Setup for {{ selected_client }}</h3>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col">
+                                <label for="paperboy_start_date">Paperboy Start Date:</label>
+                                <input type="date" name="paperboy_start_date" class="form-control" required>
+                            </div>
+                            <div class="col">
+                                <label for="initial_subscriber_count">Initial Subscriber Count:</label>
+                                <input type="number" name="initial_subscriber_count" class="form-control" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">Save Client Data</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if client_data %}
+                <!-- Your existing analytics form and display code -->
             {% endif %}
         {% endif %}
-        
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
