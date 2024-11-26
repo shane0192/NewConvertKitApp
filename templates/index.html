@@ -40,45 +40,33 @@
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="facebook_tag">Facebook Ads Tag:</label>
-                            <select name="facebook_tag" class="form-select">
-                                <option value="">Select tag...</option>
-                                {% if tags %}
-                                    {% for tag in tags %}
-                                        <option value="{{ tag.id }}" {% if tag.id == facebook_tag_id %}selected{% endif %}>
-                                            {{ tag.name }}
-                                        </option>
-                                    {% endfor %}
-                                {% endif %}
+                            <select name="facebook_tag" id="facebook_tag" class="form-control">
+                                <option value="">Select Facebook Tag</option>
+                                {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="creator_tag">Creator Network Tag:</label>
-                            <select name="creator_tag" class="form-select">
-                                <option value="">Select tag...</option>
-                                {% if tags %}
-                                    {% for tag in tags %}
-                                        <option value="{{ tag.id }}" {% if tag.id == creator_tag_id %}selected{% endif %}>
-                                            {{ tag.name }}
-                                        </option>
-                                    {% endfor %}
-                                {% endif %}
+                            <select name="creator_tag" id="creator_tag" class="form-control">
+                                <option value="">Select Creator Tag</option>
+                                {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="sparkloop_tag">Sparkloop Tag:</label>
-                            <select name="sparkloop_tag" class="form-select">
-                                <option value="">Select tag...</option>
-                                {% if tags %}
-                                    {% for tag in tags %}
-                                        <option value="{{ tag.id }}" {% if tag.id == sparkloop_tag_id %}selected{% endif %}>
-                                            {{ tag.name }}
-                                        </option>
-                                    {% endfor %}
-                                {% endif %}
+                            <select name="sparkloop_tag" id="sparkloop_tag" class="form-control">
+                                <option value="">Select Sparkloop Tag</option>
+                                {% for tag in tags %}
+                                <option value="{{ tag.id }}">{{ tag.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -101,15 +89,19 @@
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     Facebook Ads Subscribers
-                                    <span class="badge bg-primary rounded-pill">{{ results.facebook_subscribers }}</span>
+                                    <span class="badge bg-primary rounded-pill">{{ results.facebook_subscribers }} ({{ results.facebook_percent }}%)</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     Creator Network Subscribers
-                                    <span class="badge bg-primary rounded-pill">{{ results.creator_subscribers }}</span>
+                                    <span class="badge bg-primary rounded-pill">{{ results.creator_subscribers }} ({{ results.creator_percent }}%)</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     Sparkloop Subscribers
-                                    <span class="badge bg-primary rounded-pill">{{ results.sparkloop_subscribers }}</span>
+                                    <span class="badge bg-primary rounded-pill">{{ results.sparkloop_subscribers }} ({{ results.sparkloop_percent }}%)</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Organic Subscribers
+                                    <span class="badge bg-primary rounded-pill">{{ results.organic_subscribers }} ({{ results.organic_percent }}%)</span>
                                 </li>
                             </ul>
                         </div>
@@ -118,30 +110,31 @@
                 <div class="col-md-6">
                     <div class="card mb-3">
                         <div class="card-header">
-                            <h3>Growth Metrics</h3>
+                            <h2 class="mb-0">Growth Metrics</h2>
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col">
-                                    <h4>Total Growth Since Paperboy</h4>
-                                    <p class="h2">{{ results.total_growth if results else '0' }}</p>
-                                    <small class="text-muted">Since {{ results.paperboy_start_date if results else '' }}</small>
+                                <div class="col-md-6">
+                                    <label class="text-muted mb-2">Total Growth Since Paperboy</label>
+                                    <h3 class="display-4 mb-1">{{ results.total_growth }}</h3>
+                                    <small class="text-muted">Since {{ results.paperboy_start_date }}</small>
                                 </div>
-                                <div class="col">
-                                    <h4>Growth Rate</h4>
-                                    <p class="h2">{{ "%.1f"|format(results.growth_rate) if results else '0' }}%</p>
+                                <div class="col-md-6">
+                                    <label class="text-muted mb-2">Growth Rate</label>
+                                    <h3 class="display-4 mb-1">{{ results.growth_rate }}%</h3>
                                 </div>
                             </div>
-                            <div class="row mt-3">
-                                <div class="col">
-                                    <h4>Daily Average Before Paperboy</h4>
-                                    <p class="h2">{{ results.daily_average_before if results else '0' }}</p>
-                                    <small class="text-muted">{{ results.before_period if results else 'Based on 60 days before' }}</small>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <label class="text-muted mb-2">Daily Average Before Paperboy</label>
+                                    <h3 class="display-4 mb-1">{{ results.daily_average_before }}</h3>
+                                    <small class="text-muted">{{ results.before_period }}</small>
                                 </div>
-                                <div class="col">
-                                    <h4>Daily Average After Paperboy</h4>
-                                    <p class="h2">{{ results.daily_average_after if results else '0' }}</p>
-                                    <small class="text-muted">{{ results.after_period if results else '60 days after' }}</small>
+                                <div class="col-md-6">
+                                    <label class="text-muted mb-2">Daily Average After Paperboy</label>
+                                    <h3 class="display-4 mb-1">{{ results.daily_average_after }}</h3>
+                                    <small class="text-muted">{{ results.after_period }}</small>
                                 </div>
                             </div>
                         </div>
@@ -150,7 +143,7 @@
             </div>
             {% endif %}
 
-            {% if selected_client and not client_data %}
+            {% if selected_client and (not client_data or not client_data.get('paperboy_start_date')) %}
             <div class="card mb-3">
                 <div class="card-header">
                     <h3>Initial Setup for {{ selected_client }}</h3>
@@ -178,5 +171,12 @@
             {% endif %}
         {% endif %}
     </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded');
+            populateTags();
+        });
+    </script>
 </body>
 </html>

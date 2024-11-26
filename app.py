@@ -63,7 +63,9 @@ def check_environment():
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'api_key' not in session:
+        api_key = session.get('api_key')
+        if not api_key:
+            print("No API key in session, redirecting to login")
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -206,8 +208,12 @@ def get_tagged_subscribers(api_key, tag_id, start_date, end_date):
     
     return tagged_subscribers  # Return full list for filtering
 
-def get_tags(api_key):
-    """Get all tags from ConvertKit"""
+def fetch_tags(api_key=None):
+    """Get all tags from ConvertKit API"""
+    api_key = api_key or session.get('api_key')
+    if not api_key:
+        return {'error': 'No API key found', 'all_tags': [], 'suggested': {}}
+        
     try:
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -215,138 +221,183 @@ def get_tags(api_key):
         }
         
         response = rate_limited_request(
-            'https://api.convertkit.com/v4/tags',
+            f'{BASE_URL}/tags',
             headers=headers
         )
         
         if response.status_code == 200:
-            data = response.json()
-            print(f"=== Tags Retrieved ===")
-            print(f"Number of tags: {len(data.get('tags', []))}")
-            print(f"First few tags: {data.get('tags', [])[:3]}")
-            return data.get('tags', [])
-        else:
-            print(f"Error fetching tags: {response.text}")
-            return []
+            tags = response.json().get('tags', [])
             
+            # Find suggested tags
+            facebook_tag = find_closest_tag(tags, 'facebook')
+            creator_tag = find_closest_tag(tags, 'creator')
+            sparkloop_tag = find_closest_tag(tags, 'sparkloop')
+            
+            return {
+                'all_tags': tags,
+                'suggested': {
+                    'facebook': facebook_tag,
+                    'creator': creator_tag,
+                    'sparkloop': sparkloop_tag
+                }
+            }
+            
+        return {'error': 'Failed to fetch tags', 'all_tags': [], 'suggested': {}}
+        
     except Exception as e:
-        print(f"Exception in get_tags: {str(e)}")
-        return []
+        print(f"Error getting tags: {str(e)}")
+        return {'error': str(e), 'all_tags': [], 'suggested': {}}
+
+def generate_report(api_key, facebook_tag, creator_tag, sparkloop_tag, start_date, end_date):
+    try:
+        current_total = int(request.form.get('current_total', 0))
+        
+        # Get total subscribers for the recent period
+        recent_subscribers = get_subscribers(api_key, start_date, end_date)
+        total_count = len(recent_subscribers)
+        
+        # Get subscribers for each tag in the selected date range
+        facebook_subscribers = get_tagged_subscribers(api_key, facebook_tag, start_date, end_date)
+        creator_subscribers = get_tagged_subscribers(api_key, creator_tag, start_date, end_date)
+        sparkloop_subscribers = get_tagged_subscribers(api_key, sparkloop_tag, start_date, end_date)
+        
+        # ADD THESE THREE LINES before the calculations
+        facebook_count = len(facebook_subscribers)
+        creator_count = len(creator_subscribers)
+        sparkloop_count = len(sparkloop_subscribers)
+        
+        # Get client data
+        client_name = session.get('selected_client')
+        client_data = CLIENT_DATA.get(client_name, {})
+        paperboy_start_date = datetime.strptime(client_data.get('paperboy_start_date'), '%Y-%m-%d')
+        initial_count = client_data.get('initial_subscriber_count', 0)
+        
+        # Calculate the three periods
+        before_start = paperboy_start_date - timedelta(days=60)
+        before_end = paperboy_start_date
+        
+        after_start = paperboy_start_date + timedelta(days=45)
+        after_end = after_start + timedelta(days=60)
+        
+        print(f"\n=== Period Calculations ===")
+        print(f"Before period: {before_start.strftime('%Y-%m-%d')} to {before_end.strftime('%Y-%m-%d')}")
+        print(f"After period: {after_start.strftime('%Y-%m-%d')} to {after_end.strftime('%Y-%m-%d')}")
+        
+        # Get subscribers for before/after periods
+        before_subscribers = get_subscribers(api_key, 
+                                          before_start.strftime('%Y-%m-%d'),
+                                          before_end.strftime('%Y-%m-%d'))
+        
+        after_subscribers = get_subscribers(api_key,
+                                         after_start.strftime('%Y-%m-%d'),
+                                         after_end.strftime('%Y-%m-%d'))
+        
+        # Calculate daily averages
+        daily_average_before = round(len(before_subscribers) / 60, 1)
+        daily_average_after = round(len(after_subscribers) / 60, 1)
+        
+        print(f"\n=== Growth Calculations ===")
+        print(f"Before period subscribers: {len(before_subscribers)}")
+        print(f"After period subscribers: {len(after_subscribers)}")
+        print(f"Daily average before: {daily_average_before}")
+        print(f"Daily average after: {daily_average_after}")
+        
+        # Calculate total growth since Paperboy
+        total_growth = current_total - initial_count
+        growth_rate = round((total_growth / initial_count * 100), 1)
+        
+        # Calculate organic subscribers
+        attributed_count = len(facebook_subscribers) + len(creator_subscribers) + len(sparkloop_subscribers)
+        organic_count = total_count - attributed_count
+        
+        # Calculate percentages (rounded to 1 decimal place)
+        facebook_percent = round((len(facebook_subscribers) / total_count * 100), 1) if total_count > 0 else 0
+        creator_percent = round((len(creator_subscribers) / total_count * 100), 1) if total_count > 0 else 0
+        sparkloop_percent = round((len(sparkloop_subscribers) / total_count * 100), 1) if total_count > 0 else 0
+        organic_percent = round((organic_count / total_count * 100), 1) if total_count > 0 else 0
+        
+        # Calculate paid growth using existing numbers
+        paid_count = facebook_count + sparkloop_count
+        paid_percent = round((paid_count / total_count * 100), 1) if total_count > 0 else 0
+        
+        return {
+            'start_date': start_date,
+            'end_date': end_date,
+            'total_subscribers': total_count,
+            'facebook_subscribers': len(facebook_subscribers),
+            'facebook_percent': facebook_percent,
+            'creator_subscribers': len(creator_subscribers),
+            'creator_percent': creator_percent,
+            'sparkloop_subscribers': len(sparkloop_subscribers),
+            'sparkloop_percent': sparkloop_percent,
+            'organic_subscribers': organic_count,
+            'organic_percent': organic_percent,
+            'total_growth': f"{total_growth:,}",  # Add comma separator
+            'growth_rate': growth_rate,
+            'paperboy_start_date': paperboy_start_date.strftime('%Y-%m-%d'),
+            'daily_average_before': daily_average_before,
+            'daily_average_after': daily_average_after,
+            'before_period': f"{before_start.strftime('%Y-%m-%d')} to {before_end.strftime('%Y-%m-%d')}",
+            'after_period': f"{after_start.strftime('%Y-%m-%d')} to {after_end.strftime('%Y-%m-%d')}",
+            'paid_growth_percent': paid_percent,
+            'paid_subscribers': paid_count
+        }
+        
+    except Exception as e:
+        print(f"Error generating report: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return None
 
 @app.route('/', methods=['GET', 'POST'])
 @token_required
 def index():
-    # Always set default dates relative to today
-    default_end_date = datetime.now().strftime('%Y-%m-%d')
-    default_start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    # Get session data
+    api_key = session.get('api_key')
+    client_name = session.get('selected_client')
     
-    selected_client = session.get('selected_client')
-    client_data = get_client_data(selected_client)
-
-    # If we don't have client data yet, show the setup form
-    if selected_client and not client_data:
+    if not api_key or not client_name:
+        return redirect(url_for('login'))
+    
+    if request.method == 'GET':
+        # Get current date for default date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        # Get tags and suggested tags
+        tags_data = fetch_tags()  # fetch_tags now returns a dictionary directly
+        
         return render_template('index.html',
-                             selected_client=selected_client,
-                             show_setup=True,
-                             default_start_date=default_start_date,
-                             default_end_date=default_end_date)
-
-    if request.method == 'POST':
-        try:
-            # Handle first-time setup
-            if 'paperboy_start_date' in request.form:
-                new_client_data = {
-                    'paperboy_start_date': request.form.get('paperboy_start_date'),
-                    'initial_subscriber_count': int(request.form.get('initial_subscriber_count'))
-                }
-                CLIENT_DATA[selected_client] = new_client_data
-                save_client_data()
-                client_data = new_client_data
-                flash('Client setup completed successfully!', 'success')
-                return redirect(url_for('index'))
-
-            # Only process analytics if we have client data
-            if client_data:
-                start_date = request.form.get('start_date', default_start_date)
-                end_date = request.form.get('end_date', default_end_date)
-                current_total = int(request.form.get('current_total', 0))
-                
-                # Get tag selections
-                facebook_tag = request.form.get('facebook_tag')
-                creator_tag = request.form.get('creator_tag')
-                sparkloop_tag = request.form.get('sparkloop_tag')
-                
-                # Get subscribers and calculate metrics
-                recent_subscribers = get_subscribers(session['api_key'], start_date, end_date)
-                
-                # Only calculate growth rate if we have the necessary data
-                growth_rate = 0
-                if client_data and 'initial_subscriber_count' in client_data:
-                    growth_rate = ((current_total - client_data['initial_subscriber_count']) / 
-                                 client_data['initial_subscriber_count'] * 100)
-                
-                # Calculate total growth since Paperboy start
-                paperboy_start = datetime.strptime(client_data['paperboy_start_date'], '%Y-%m-%d')
-                total_growth = current_total - client_data['initial_subscriber_count']
-                
-                # Get subscribers for 60 days before Paperboy
-                before_start = paperboy_start - timedelta(days=60)
-                before_subscribers = get_subscribers(session['api_key'], 
-                                                  before_start.strftime('%Y-%m-%d'),
-                                                  client_data['paperboy_start_date'])
-                
-                # Get subscribers for 60 days after Paperboy
-                after_end = paperboy_start + timedelta(days=60)
-                after_subscribers = get_subscribers(session['api_key'],
-                                                 client_data['paperboy_start_date'],
-                                                 after_end.strftime('%Y-%m-%d'))
-                
-                # Calculate daily averages
-                daily_average_before = len(before_subscribers) / 60
-                daily_average_after = len(after_subscribers) / 60
-                
-                results = {
-                    'start_date': start_date,
-                    'end_date': end_date,
-                    'total_subscribers': len(recent_subscribers),
-                    'facebook_subscribers': len(get_tagged_subscribers(session['api_key'], facebook_tag, start_date, end_date)) if facebook_tag else 0,
-                    'creator_subscribers': len(get_tagged_subscribers(session['api_key'], creator_tag, start_date, end_date)) if creator_tag else 0,
-                    'sparkloop_subscribers': len(get_tagged_subscribers(session['api_key'], sparkloop_tag, start_date, end_date)) if sparkloop_tag else 0,
-                    'growth_rate': growth_rate,
-                    'total_growth': total_growth,
-                    'daily_average_before': round(daily_average_before, 1),
-                    'daily_average_after': round(daily_average_after, 1),
-                    'paperboy_start_date': client_data['paperboy_start_date'],
-                    'before_period': f"{before_start.strftime('%Y-%m-%d')} to {client_data['paperboy_start_date']}",
-                    'after_period': f"{client_data['paperboy_start_date']} to {after_end.strftime('%Y-%m-%d')}"
-                }
-                
-                return render_template('index.html',
-                                   results=results,
-                                   client_data=client_data,
-                                   selected_client=selected_client,
-                                   tags=get_tags(session['api_key']),
-                                   facebook_tag_id=int(facebook_tag) if facebook_tag else DEFAULT_FACEBOOK_TAG,
-                                   creator_tag_id=int(creator_tag) if creator_tag else DEFAULT_CREATOR_TAG,
-                                   sparkloop_tag_id=int(sparkloop_tag) if sparkloop_tag else DEFAULT_SPARKLOOP_TAG,
-                                   default_start_date=default_start_date,
-                                   default_end_date=default_end_date)
+            client_name=client_name,
+            tags=tags_data.get('tags', []),
+            suggested_tags=tags_data.get('suggested', {}),
+            default_start_date=start_date.strftime('%Y-%m-%d'),
+            default_end_date=end_date.strftime('%Y-%m-%d'),
+            selected_client=client_name,
+            client_data=CLIENT_DATA.get(client_name))
             
-        except Exception as e:
-            print(f"Error processing data: {str(e)}")
-            print(traceback.format_exc())
-            flash('Error processing data', 'error')
-    
-    # Default GET render
-    return render_template('index.html',
-                         client_data=client_data,
-                         selected_client=selected_client,
-                         tags=get_tags(session['api_key']) if 'api_key' in session else None,
-                         facebook_tag_id=DEFAULT_FACEBOOK_TAG,
-                         creator_tag_id=DEFAULT_CREATOR_TAG,
-                         sparkloop_tag_id=DEFAULT_SPARKLOOP_TAG,
-                         default_start_date=default_start_date,
-                         default_end_date=default_end_date)
+    else:  # POST request
+        # Your existing POST handling code here
+        facebook_tag = request.form.get('facebook_tag')
+        creator_tag = request.form.get('creator_tag')
+        sparkloop_tag = request.form.get('sparkloop_tag')
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        
+        # Generate report
+        results = generate_report(api_key, facebook_tag, creator_tag, sparkloop_tag, start_date, end_date)
+        
+        # Get tags for template rendering
+        tags_data = fetch_tags()
+        
+        return render_template('index.html',
+            client_name=client_name,
+            tags=tags_data.get('tags', []),
+            suggested_tags=tags_data.get('suggested', {}),
+            default_start_date=start_date,
+            default_end_date=end_date,
+            selected_client=client_name,
+            client_data=CLIENT_DATA.get(client_name),
+            results=results)
 
 @app.route('/oauth/authorize')
 def oauth_authorize():
@@ -385,23 +436,39 @@ def oauth_callback():
             account_data = account_response.json()
             print(f"Account data received: {account_data}")
             
-            # Get name from the account data
-            client_name = account_data.get('account', {}).get('name')
-            session['selected_client'] = client_name
+            # Get account info
+            client_name = account_data['account']['name']
             print(f"Selected client: {client_name}")
             
+            # Load existing data from file
+            try:
+                with open('client_data.json', 'r') as f:
+                    CLIENT_DATA.update(json.load(f))
+            except FileNotFoundError:
+                print("No existing client data file found")
+            
+            # Only initialize if client doesn't exist at all
             if client_name not in CLIENT_DATA:
                 print(f"New client detected: {client_name}")
                 CLIENT_DATA[client_name] = {}
                 save_client_data()
+            else:
+                print(f"Existing client found: {client_name}")
+                print(f"Client data: {CLIENT_DATA[client_name]}")
+            
+            session['api_key'] = token["access_token"]
+            session['selected_client'] = client_name
+            
+            print(f"Session data set - API Key: {'Present' if 'api_key' in session else 'Missing'}")
+            print(f"Session data set - Client: {session.get('selected_client')}")
+            
+            return redirect(url_for('index'))
+            
         else:
             print(f"Error getting account data: {account_response.text}")
+            flash('Error getting account data', 'error')
+            return redirect(url_for('index'))
             
-        session['api_key'] = token['access_token']
-        session['token_expiry'] = time.time() + token.get('expires_in', 3600)
-        flash('Successfully connected to ConvertKit!', 'success')
-        return redirect(url_for('index'))
-        
     except Exception as e:
         print(f"OAuth Error: {str(e)}")
         flash('Authentication failed. Please try again.', 'error')
@@ -460,6 +527,101 @@ def login():
 
 # Initialize the app
 check_environment()
+
+def save_client_data():
+    """Save client data to a JSON file"""
+    try:
+        with open('client_data.json', 'w') as f:
+            json.dump(CLIENT_DATA, f)
+        print("Client data saved successfully")
+    except Exception as e:
+        print(f"Error saving client data: {str(e)}")
+
+def find_closest_tag(tags, tag_type):
+    """
+    Find the closest matching tag from common variations
+    tags: list of tag dictionaries from ConvertKit
+    tag_type: 'facebook', 'creator', or 'sparkloop'
+    """
+    print(f"\n=== Finding {tag_type} tag ===")
+    
+    variations = {
+        'facebook': ['facebook ads', 'facebook ad', 'fb ads', 'fb ad', 'facebook', 'paid ads', 'paid'],
+        'creator': ['creator network', 'creator', 'network', 'cn', 'ambassador'],
+        'sparkloop': ['sparkloop', 'spark loop', 'spark', 'loop', 'referral', 'refer']
+    }
+    
+    # Print all available tags for debugging
+    print("Available tags:")
+    for tag in tags:
+        print(f"- {tag['name']} (ID: {tag['id']})")
+    
+    # Convert all tag names to lowercase for comparison
+    tag_map = {tag['name'].lower(): tag for tag in tags}
+    
+    # Check each variation against the tags
+    for variation in variations[tag_type]:
+        print(f"Checking variation: {variation}")
+        for tag_name, tag in tag_map.items():
+            if variation in tag_name.lower():
+                print(f"Found match! Tag: {tag['name']} (ID: {tag['id']})")
+                return tag['id']
+    
+    print("No match found, using default tag")
+    # Return default tags if no match found
+    default_tags = {
+        'facebook': DEFAULT_FACEBOOK_TAG,
+        'creator': DEFAULT_CREATOR_TAG,
+        'sparkloop': DEFAULT_SPARKLOOP_TAG
+    }
+    return default_tags.get(tag_type)
+
+@app.route('/get_tags')
+def get_tags():
+    api_key = session.get('api_key')
+    if not api_key:
+        return jsonify({'error': 'No API key found'})
+        
+    try:
+        print("\n=== Getting Tags ===")
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = rate_limited_request(
+            f'{BASE_URL}/tags',
+            headers=headers
+        )
+        
+        if response.status_code == 200:
+            tags = response.json().get('tags', [])
+            
+            # Find suggested tags
+            facebook_tag = find_closest_tag(tags, 'facebook')
+            creator_tag = find_closest_tag(tags, 'creator')
+            sparkloop_tag = find_closest_tag(tags, 'sparkloop')
+            
+            print("Found tags:", {
+                'facebook': facebook_tag,
+                'creator': creator_tag,
+                'sparkloop': sparkloop_tag
+            })
+            
+            return jsonify({
+                'all_tags': tags,
+                'suggested': {
+                    'facebook': facebook_tag,
+                    'creator': creator_tag,
+                    'sparkloop': sparkloop_tag
+                }
+            })
+            
+        return jsonify({'error': 'Failed to fetch tags'})
+        
+    except Exception as e:
+        print(f"Error getting tags: {str(e)}")
+        return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
     app.run(ssl_context='adhoc')
